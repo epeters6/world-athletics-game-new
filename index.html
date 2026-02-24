@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Summer Athletics</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-blue: #64B5F6;
+            --bg-green: #81C784;
+            --header-yellow: #FFD54F;
+            --panel-gray: #EEEEEE;
+            --border-dark: #222222;
+            --land-green: #388E3C;
+            --ocean-blue: #1976D2;
+            --text-color: #222222;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none; /* Prevent text selection during gameplay */
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #222; /* Dark background outside game area */
+            font-family: 'Press Start 2P', cursive;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            color: var(--text-color);
+        }
+
+        #game-container {
+            position: relative;
+            width: 800px; /* Standard retro resolution width */
+            height: 600px; /* Standard retro resolution height */
+            background-color: var(--bg-blue);
+            border: 4px solid var(--border-dark);
+            box-shadow: 0 0 0 4px #000; /* Extra border for chunky look */
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Utility classes for text/UI overlays if needed, though most will be canvas-drawn */
+        .hidden {
+            display: none !important;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+</div>
+
+<script>
+    // --- Constants & Config ---
+    const CANVAS_WIDTH = 800;
+    const CANVAS_HEIGHT = 600;
+
+    const COLORS = {
+        bgBlue: '#64B5F6',
+        bgGreen: '#81C784',
+        headerYellow: '#FFD54F',
+        panelGray: '#EEEEEE',
+        borderDark: '#222222',
+        landGreen: '#388E3C',
+        oceanBlue: '#1976D2',
+        white: '#FFFFFF',
+        black: '#000000',
+        waterBlue: '#4FC3F7', // Slightly lighter for pool
+        laneLine: '#FFFFFF',
+        text: '#222222'
+    };
+
+    const WORLD_MAP = [
+        "00000000000000000000",
+        "01110000001111000000",
+        "01111000011111100000",
+        "00110000011111110000",
+        "00111000001111100000",
+        "00011000000111000000",
+        "00010000000000000000",
+        "00000000000000111000",
+        "00000000000000011000",
+        "00000000000000000000"
+    ];
+
+    const CITY_DICTIONARY = {
+        paris: { primary: '#002395', secondary: '#ED2939', name: 'Paris' },
+        tokyo: { primary: '#BC002D', secondary: '#FFFFFF', name: 'Tokyo' },
+        rio: { primary: '#009B3A', secondary: '#FEDF00', name: 'Rio' },
+        london: { primary: '#012169', secondary: '#C8102E', name: 'London' }
+    };
+
+    const HOSTS = {
+        2028: { name: 'Los Angeles', primary: '#002868', secondary: '#BF0A30' }, // USA
+        2032: { name: 'Brisbane', primary: '#00843D', secondary: '#FFCD00' }   // Australia
+    };
+
+    // --- Game State ---
+    const GAME_STATES = {
+        START: 'START',
+        HUB: 'HUB',
+        RACE: 'RACE',
+        RESULTS: 'RESULTS'
+    };
+
+    // --- Audio Controller ---
+    class AudioController {
+        constructor() {
+            this.sounds = {
+                bgm: new Audio('bgm.mp3'),
+                blip: new Audio('blip.mp3'),
+                splash: new Audio('splash.mp3'),
+                buzzer: new Audio('buzzer.mp3')
+            };
+            this.sounds.bgm.loop = true;
+        }
+
+        playBgm() {
+            this.sounds.bgm.play().catch(e => console.log("Audio play failed (user interaction needed first)"));
+        }
+
+        playSfx(name) {
+            if (this.sounds[name]) {
+                // Clone to allow overlapping sounds
+                const sfx = this.sounds[name].cloneNode();
+                sfx.play().catch(e => {});
+            }
+        }
+    }
+    const audio = new AudioController();
+
+    // --- Data Classes ---
+    class Athlete {
+        constructor(name, age, speed, stamina, technique) {
+            this.name = name;
+            this.age = age;
+            this.speed = speed;       // 1-100
+            this.stamina = stamina;   // 1-100
+            this.technique = technique; // 1-100
+            this.cycles = 0; // Number of World Games participated in
+        }
+
+        train(facilityLevel) {
+            // Training logic: Gain based on facility level
+            // Base gain 0.5 * Level
+            const gain = 0.5 * facilityLevel;
+            this.speed = Math.min(100, this.speed + gain);
+            this.stamina = Math.min(100, this.stamina + gain);
+            this.technique = Math.min(100, this.technique + gain);
+        }
+
+        ageUp() {
+            this.age += 4;
+            this.cycles++;
+
+            // Degrade after 3rd cycle
+            if (this.cycles > 3) {
+                this.speed *= 0.9;
+                this.stamina *= 0.9;
+                this.technique *= 0.9;
+            }
+        }
+
+        shouldRetire() {
+            return this.cycles >= 5;
+        }
+    }
+
+    class Nation {
+        constructor(name, primaryColor, secondaryColor, baseStats) {
+            this.name = name;
+            this.primaryColor = primaryColor;
+            this.secondaryColor = secondaryColor;
+            this.money = 0;
+            this.facilities = {
+                aquatics: 1 // Level 1-10
+            };
+            this.roster = [];
+            this.baseStats = baseStats; // { speed: range, stamina: range... } for generating roster
+        }
+
+        generateRoster() {
+            this.roster = [];
+            // Generate 3 athletes
+            for(let i=0; i<3; i++) {
+                this.roster.push(this.createAthlete());
+            }
+        }
+
+        createAthlete(isProspect = false) {
+            const names = ["Smith", "Jones", "Ali", "Chen", "Silva", "Kim", "M Muller", "Popov", "Wang", "Rossi"];
+            const name = names[Math.floor(Math.random() * names.length)];
+
+            // Base stats from nation profile
+            let spd = this.baseStats.speed;
+            let sta = this.baseStats.stamina;
+            let tec = this.baseStats.technique;
+
+            if (isProspect) {
+                // Prospects have higher starting stats
+                spd += 10; sta += 10; tec += 10;
+            } else if (!this.roster.length && !isProspect) {
+                 // Initial roster generation logic uses base stats directly
+            } else {
+                // Walk-ons have terrible stats (1/10th of base roughly? Or just very low)
+                // "1/10 stats" as per prompt
+                 spd = 10; sta = 10; tec = 10;
+            }
+
+            return new Athlete(name, 18, spd, sta, tec);
+        }
+    }
+
+    class Game {
+        constructor() {
+            this.year = 2024;
+            this.month = 48; // Counts down to 0
+            this.playerNation = null;
+            this.currentHost = null; // Will be set dynamically
+            this.state = GAME_STATES.START;
+            this.selectedAthleteIndex = 0;
+        }
+
+        start(nationChoice) {
+            // nationChoice: 'USA', 'EGY', 'AUS'
+            if (nationChoice === 'USA') {
+                this.playerNation = new Nation("USA", "#002868", "#BF0A30", {speed: 80, stamina: 70, technique: 70});
+                this.playerNation.money = 50000; // High facilities start? Or just money to buy them.
+                this.playerNation.facilities.aquatics = 5;
+            } else if (nationChoice === 'EGY') {
+                this.playerNation = new Nation("Egypt", "#CE1126", "#000000", {speed: 40, stamina: 40, technique: 40});
+                this.playerNation.money = 10000;
+            } else { // AUS
+                this.playerNation = new Nation("Australia", "#00843D", "#FFCD00", {speed: 70, stamina: 60, technique: 80});
+                this.playerNation.money = 25000;
+                this.playerNation.facilities.aquatics = 3;
+            }
+            this.playerNation.generateRoster();
+            this.setHost();
+            this.state = GAME_STATES.HUB;
+        }
+
+        setHost() {
+            // Determine host based on year
+            const nextGamesYear = this.year + 4; // Simplified logic, assumes we just finished a cycle or starting
+            // Wait, prompt says "2028 is LA... 2032 is Brisbane".
+            // If we start at 2024 (post-Paris?), the countdown is for 2028.
+
+            let targetYear = this.year + (48 - this.month)/12; // Roughly
+            // Actually simpler: We are preparing FOR a specific year.
+            // Let's say start year is 2024, preparing for 2028.
+
+            const cycleYear = this.year + 4;
+
+            if (cycleYear === 2028) this.currentHost = HOSTS[2028];
+            else if (cycleYear === 2032) this.currentHost = HOSTS[2032];
+            else {
+                // Random from dictionary
+                const keys = Object.keys(CITY_DICTIONARY);
+                const key = keys[Math.floor(Math.random() * keys.length)];
+                this.currentHost = CITY_DICTIONARY[key];
+            }
+        }
+    }
+
+    const game = new Game();
+    let currentState = GAME_STATES.START;
+
+    // Canvas Setup
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Basic Input Handling
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+        keys[e.code] = true;
+        // Prevent scrolling with Space/Arrow keys
+        if(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.code) > -1) {
+            e.preventDefault();
+        }
+    });
+    window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+    // Mouse Handling for UI clicks
+    const mouse = { x: 0, y: 0, click: false, isDown: false };
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = (e.clientX - rect.left) * (CANVAS_WIDTH / rect.width);
+        mouse.y = (e.clientY - rect.top) * (CANVAS_HEIGHT / rect.height);
+    });
+    canvas.addEventListener('mousedown', () => mouse.isDown = true);
+    canvas.addEventListener('mouseup', () => {
+        mouse.isDown = false;
+        mouse.click = true; // Register click on mouse up
+    });
+
+
+    // --- Helper Functions ---
+    function drawRect(x, y, w, h, color, border = false) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, w, h);
+        if (border) {
+            ctx.strokeStyle = COLORS.borderDark;
+            ctx.lineWidth = 4;
+            ctx.strokeRect(x, y, w, h);
+        }
+    }
+
+    function drawText(text, x, y, size, color, align = 'left') {
+        ctx.fillStyle = color;
+        ctx.font = `${size}px "Press Start 2P"`;
+        ctx.textAlign = align;
+        ctx.fillText(text, x, y);
+    }
+
+    function isInside(pos, rect) {
+        return pos.x > rect.x && pos.x < rect.x + rect.w && pos.y < rect.y + rect.h && pos.y > rect.y;
+    }
+
+    // --- State Implementations ---
+
+    // RACE LOGIC
+    const RACE_PHASES = {
+        BLOCKS: 0,
+        DIVE: 1,
+        UNDERWATER: 2,
+        SWIMMING: 3,
+        TURN: 4,
+        FINISH: 5,
+        DQ: 6
+    };
+
+    const race = {
+        phase: RACE_PHASES.BLOCKS,
+        distance: 0, // 0 to 100
+        speed: 0,
+        stamina: 100,
+        maxStamina: 100,
+        timer: 0,
+        lastInputTime: 0,
+        lane: 4, // Visual lane
+        feedback: { text: '', time: 0 },
+        athlete: null,
+        statSpeed: 0,
+        statStamina: 0,
+        statTech: 0,
+        keys: { a: false, d: false, w: false, space: false },
+        lastFrameKeys: { a: false, d: false, w: false, space: false }
+    };
+
+    function startRace() {
+        currentState = GAME_STATES.RACE;
+        const athlete = game.playerNation.roster[game.selectedAthleteIndex];
+        race.athlete = athlete;
+        race.statSpeed = athlete.speed;
+        race.statStamina = athlete.stamina;
+        race.statTech = athlete.technique;
+
+        race.phase = RACE_PHASES.BLOCKS;
+        race.distance = 0;
+        race.speed = 0;
+        race.maxStamina = athlete.stamina; // Or some derived value
+        race.stamina = race.maxStamina;
+        race.timer = -3000; // 3 second countdown
+        race.lastInputTime = 0;
+        race.feedback = { text: "READY", time: 100 };
+    }
+
+    function updateRace() {
+        // Delta time logic would be better but fixed step is okay for retro feel
+        race.timer += 16.6; // ~60fps
+
+        // Input handling (detect key presses this frame)
+        const pressedSpace = keys.Space && !race.lastFrameKeys.space;
+        const pressedW = keys.KeyW && !race.lastFrameKeys.w;
+        const pressedA = keys.KeyA && !race.lastFrameKeys.a;
+        const pressedD = keys.KeyD && !race.lastFrameKeys.d;
+
+        // Update last frame keys
+        race.lastFrameKeys.space = keys.Space;
+        race.lastFrameKeys.w = keys.KeyW;
+        race.lastFrameKeys.a = keys.KeyA;
+        race.lastFrameKeys.d = keys.KeyD;
+
+        if (race.phase === RACE_PHASES.BLOCKS) {
+            if (race.timer >= 0) {
+                race.phase = RACE_PHASES.DIVE;
+                race.feedback = { text: "GO!", time: 60 };
+                race.timer = 0;
+            } else {
+                if (race.timer > -1000) race.feedback.text = "SET";
+                else if (race.timer > -2000) race.feedback.text = "TAKE YOUR MARKS";
+            }
+        }
+        else if (race.phase === RACE_PHASES.DIVE) {
+             // Reaction time
+             if (pressedSpace) {
+                 if (race.timer < 500) { // Quick reaction
+                      race.speed = 5 + (race.statSpeed / 20); // Initial burst
+                      race.phase = RACE_PHASES.UNDERWATER;
+                      race.feedback = { text: "GREAT DIVE!", time: 60 };
+                      audio.playSfx('splash');
+                 } else {
+                      race.speed = 3;
+                      race.phase = RACE_PHASES.UNDERWATER;
+                      race.feedback = { text: "SLOW...", time: 60 };
+                      audio.playSfx('splash');
+                 }
+             }
+             // Auto dive if too late
+             if (race.timer > 1500 && race.phase === RACE_PHASES.DIVE) {
+                 race.speed = 2;
+                 race.phase = RACE_PHASES.UNDERWATER;
+                 race.feedback = { text: "LATE!", time: 60 };
+                 audio.playSfx('splash');
+             }
+        }
+        else if (race.phase === RACE_PHASES.UNDERWATER) {
+            // Decelerate
+            race.speed *= 0.98;
+
+            // Dolphin Kicks
+            if (pressedSpace) {
+                race.speed += 0.5 + (race.statSpeed / 200);
+                race.stamina -= 2; // High cost
+                audio.playSfx('splash');
+            }
+
+            // Surface
+            if (pressedW) {
+                race.phase = RACE_PHASES.SWIMMING;
+                race.feedback = { text: "SURFACED", time: 30 };
+            }
+
+            // 15m Rule
+            // Check first leg (15m) and return leg (50+15 = 65m)
+            if ((race.distance > 15 && race.distance < 50) || (race.distance > 65 && race.distance < 100)) {
+                 race.phase = RACE_PHASES.DQ;
+                 race.feedback = { text: "DQ! UNDERWATER > 15m", time: 200 };
+                 audio.playSfx('buzzer');
+            }
+        }
+        else if (race.phase === RACE_PHASES.SWIMMING) {
+            // Decelerate (Drag)
+            race.speed *= 0.97; // Stronger drag on surface
+
+            // Rhythm Input
+            if (pressedA || pressedD) {
+                const now = Date.now();
+                const diff = now - race.lastInputTime;
+                race.lastInputTime = now;
+
+                // Ideal rhythm 500ms
+                // Tolerance: 400-600 is good.
+                // <300 is mashing.
+
+                if (diff < 300) {
+                    race.stamina -= 3;
+                    race.feedback = { text: "BAD! TOO FAST", time: 30 };
+                } else if (diff > 800) {
+                     race.speed += 0.2; // Slow recovery
+                     race.feedback = { text: "TOO SLOW", time: 30 };
+                } else {
+                     // Good rhythm
+                     const quality = Math.abs(500 - diff);
+                     if (quality < 50) {
+                         race.speed += 0.8 + (race.statSpeed / 300);
+                         race.stamina -= 0.5;
+                         race.feedback = { text: "PERFECT!", time: 30 };
+                     } else {
+                         race.speed += 0.5;
+                         race.stamina -= 1;
+                         race.feedback = { text: "GOOD", time: 30 };
+                     }
+                }
+                audio.playSfx('splash');
+            }
+
+            // Turn Logic at 50m
+            if (race.distance >= 50 && race.distance < 51) {
+                 race.phase = RACE_PHASES.TURN;
+                 race.feedback = { text: "TURN! PRESS SPACE", time: 100 };
+                 race.speed = 0; // Pause for turn
+            }
+        }
+        else if (race.phase === RACE_PHASES.TURN) {
+            if (pressedSpace) {
+                race.phase = RACE_PHASES.UNDERWATER; // Back underwater
+                race.distance = 50.1; // Push off
+                race.speed = 4 + (race.statTech / 25); // Push off speed
+                race.feedback = { text: "GREAT TURN!", time: 60 };
+                audio.playSfx('splash');
+            }
+        }
+
+        // Physics update
+
+        // Stamina penalty
+        if (race.stamina <= 0) {
+            race.stamina = 0;
+            const max = (4.0 * 0.2); // 20% max speed
+            if (race.speed > max) race.speed = max;
+        }
+
+        // Move
+        if (race.phase !== RACE_PHASES.BLOCKS && race.phase !== RACE_PHASES.TURN && race.phase !== RACE_PHASES.FINISH && race.phase !== RACE_PHASES.DQ) {
+            // Speed is m/s?
+            // 100m in 25s = 4m/s.
+            // 1 frame = 16ms = 0.016s.
+            // dist += speed * 0.016.
+            race.distance += race.speed * 0.016;
+        }
+
+        // Finish
+        if (race.distance >= 100 && race.phase !== RACE_PHASES.FINISH) {
+            race.phase = RACE_PHASES.FINISH;
+            race.feedback = { text: "FINISHED!", time: 200 };
+            // Calculate funding
+            let prize = 0;
+            let rank = "4th"; // Placeholder logic for now
+            // Simulating other swimmers based on player time?
+            const time = race.timer / 1000;
+            if (time < 26) { prize = 50000; rank = "1st"; }
+            else if (time < 28) { prize = 25000; rank = "2nd"; }
+            else if (time < 30) { prize = 10000; rank = "3rd"; }
+
+            game.playerNation.money += prize;
+            game.lastRaceResult = { time: time, rank: rank, prize: prize };
+
+            setTimeout(() => {
+                currentState = GAME_STATES.RESULTS;
+            }, 2000);
+        }
+
+        // Feedback timer
+        if (race.feedback.time > 0) race.feedback.time--;
+    }
+
+    function drawRace() {
+        // Render Pool
+        ctx.fillStyle = COLORS.waterBlue;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Lane Lines
+        const laneHeight = 60;
+        const startY = 100;
+        const poolStart = 50;
+        const poolEnd = 750;
+        const poolLengthPx = poolEnd - poolStart; // 700px for 50m -> 14px per meter
+
+        ctx.strokeStyle = COLORS.laneLine;
+        ctx.lineWidth = 2;
+        for (let i = 0; i <= 8; i++) {
+            const y = startY + (i * laneHeight);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(CANVAS_WIDTH, y);
+            ctx.stroke();
+
+            // Lane Numbers
+            if (i < 8) {
+                drawText(`${i+1}`, 20, y + 40, 20, '#FFFFFF55', 'center');
+            }
+        }
+
+        // 15m Line (Red)
+        // 15m from start
+        const line15mX = poolStart + (15 * 14);
+        ctx.strokeStyle = '#FF0000';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(line15mX, startY);
+        ctx.lineTo(line15mX, startY + (8 * laneHeight));
+        ctx.stroke();
+        drawText("15m", line15mX, startY - 10, 10, '#FF0000', 'center');
+
+        // 15m from Turn (Return leg)
+        const line15mReturnX = poolEnd - (15 * 14);
+        ctx.beginPath();
+        ctx.moveTo(line15mReturnX, startY);
+        ctx.lineTo(line15mReturnX, startY + (8 * laneHeight));
+        ctx.stroke();
+        drawText("15m", line15mReturnX, startY - 10, 10, '#FF0000', 'center');
+
+        // Walls
+        ctx.fillStyle = '#999';
+        ctx.fillRect(0, startY - 20, 50, (8 * laneHeight) + 40); // Left Wall
+        ctx.fillRect(750, startY - 20, 50, (8 * laneHeight) + 40); // Right Wall
+
+        // Draw Swimmer
+        let swimmerX = 0;
+        let facingRight = true;
+
+        if (race.distance <= 50) {
+            swimmerX = poolStart + (race.distance * 14);
+            facingRight = true;
+        } else {
+            swimmerX = poolEnd - ((race.distance - 50) * 14);
+            facingRight = false;
+        }
+
+        const swimmerY = startY + (race.lane * laneHeight) - (laneHeight/2);
+
+        // Swimmer Body (Simple Shapes)
+        ctx.save();
+        ctx.translate(swimmerX, swimmerY);
+        if (!facingRight) ctx.scale(-1, 1);
+
+        // Arms (Animation based on speed/time)
+        const armAngle = Math.sin(race.timer * 0.01) * 1;
+
+        // Color based on nation
+        const capColor = game.playerNation.primaryColor;
+        const skinColor = '#FFCCAA';
+
+        // Body
+        ctx.fillStyle = skinColor;
+        ctx.fillRect(-15, -10, 30, 20);
+
+        // Head
+        ctx.fillStyle = capColor;
+        ctx.beginPath();
+        ctx.arc(15, 0, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Arms
+        ctx.strokeStyle = skinColor;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(-5, -5);
+        ctx.lineTo(-5 + Math.cos(armAngle)*20, -5 + Math.sin(armAngle)*20);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Feedback Text (Above Swimmer)
+        if (race.feedback.time > 0) {
+            drawText(race.feedback.text, swimmerX, swimmerY - 40, 12, COLORS.white, 'center');
+        }
+
+        // UI Overlay
+        // Top Bar
+        drawRect(0, 0, CANVAS_WIDTH, 60, '#000000AA');
+        drawText(`TIME: ${(race.timer/1000).toFixed(2)}`, 50, 40, 20, COLORS.white);
+        drawText(`DIST: ${Math.min(100, race.distance).toFixed(1)}m`, 300, 40, 20, COLORS.white);
+
+        // Speed
+        drawText(`SPD: ${race.speed.toFixed(1)} m/s`, 600, 40, 16, COLORS.white);
+
+        // Stamina Bar
+        const barW = 200;
+        const barH = 20;
+        const barX = CANVAS_WIDTH/2 - barW/2;
+        const barY = 550;
+
+        drawRect(barX, barY, barW, barH, '#333', true);
+        const stamPct = race.stamina / race.maxStamina;
+        const stamW = barW * stamPct;
+        ctx.fillStyle = stamPct > 0.5 ? '#00FF00' : (stamPct > 0.2 ? '#FFFF00' : '#FF0000');
+        ctx.fillRect(barX, barY, stamW, barH);
+        drawText("STAMINA", barX, barY - 10, 12, COLORS.white);
+
+        // Controls hint
+        if (race.phase === RACE_PHASES.BLOCKS) {
+             drawText("READY...", CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 40, COLORS.white, 'center');
+        } else if (race.phase === RACE_PHASES.DIVE) {
+             drawText("SPACE!", CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 40, COLORS.white, 'center');
+        } else if (race.phase === RACE_PHASES.UNDERWATER) {
+             drawText("TAP SPACE! (Press W to surface)", CANVAS_WIDTH/2, 500, 16, COLORS.white, 'center');
+        } else if (race.phase === RACE_PHASES.SWIMMING) {
+             drawText("A / D Rhythm", CANVAS_WIDTH/2, 500, 16, COLORS.white, 'center');
+        } else if (race.phase === RACE_PHASES.DQ) {
+             drawText("DQ!", CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 60, '#FF0000', 'center');
+        } else if (race.phase === RACE_PHASES.FINISH) {
+             drawText("FINISH!", CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 60, COLORS.headerYellow, 'center');
+             drawText(`Time: ${(race.timer/1000).toFixed(2)}s`, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 60, 24, COLORS.white, 'center');
+        }
+    }
+
+    // RESULTS SCREEN
+    const resultsUI = {
+        continueBtn: { x: 300, y: 500, w: 200, h: 50 }
+    };
+
+    function updateResults() {
+        if (mouse.click) {
+            if (isInside(mouse, resultsUI.continueBtn)) {
+                // Advance 4 year cycle
+                game.year += 4;
+                game.month = 48;
+                game.setHost();
+
+                // Age up athletes
+                game.playerNation.roster.forEach(a => a.ageUp());
+
+                // Remove retired
+                game.playerNation.roster = game.playerNation.roster.filter(a => !a.shouldRetire());
+
+                audio.playSfx('blip');
+                currentState = GAME_STATES.HUB;
+            }
+        }
+    }
+
+    function drawResults() {
+        const res = game.lastRaceResult;
+
+        // Background
+        ctx.fillStyle = game.currentHost.primary;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Panel
+        drawRect(200, 100, 400, 400, COLORS.panelGray, true);
+
+        // Header
+        ctx.fillStyle = game.currentHost.secondary;
+        ctx.fillRect(204, 104, 392, 60);
+        drawText("RESULTS", 400, 150, 24, COLORS.white, 'center');
+
+        // Stats
+        drawText(`RANK: ${res.rank}`, 400, 250, 30, COLORS.text, 'center');
+        drawText(`TIME: ${res.time.toFixed(2)}s`, 400, 300, 20, COLORS.text, 'center');
+        drawText(`PRIZE: $${res.prize}`, 400, 350, 20, '#00AA00', 'center');
+
+        // Continue
+        drawRect(resultsUI.continueBtn.x, resultsUI.continueBtn.y, resultsUI.continueBtn.w, resultsUI.continueBtn.h, COLORS.headerYellow, true);
+        drawText("CONTINUE", 400, 535, 16, COLORS.text, 'center');
+    }
+
+    // START SCREEN
+    const startUI = {
+        usa: { x: 50, y: 300, w: 200, h: 250, code: 'USA', name: 'USA', color: '#002868', stats: 'SPD: Hi\nSTA: Hi\nTEC: Hi\n$$$: Hi' },
+        egy: { x: 300, y: 300, w: 200, h: 250, code: 'EGY', name: 'Egypt', color: '#CE1126', stats: 'SPD: Lo\nSTA: Lo\nTEC: Lo\n$$$: Lo' },
+        aus: { x: 550, y: 300, w: 200, h: 250, code: 'AUS', name: 'Australia', color: '#00843D', stats: 'SPD: Hi\nSTA: Mid\nTEC: Hi\n$$$: Mid' }
+    };
+
+    function updateStart() {
+        if (mouse.click) {
+            if (isInside(mouse, startUI.usa)) game.start('USA');
+            else if (isInside(mouse, startUI.egy)) game.start('EGY');
+            else if (isInside(mouse, startUI.aus)) game.start('AUS');
+
+            if (game.state === GAME_STATES.HUB) {
+                currentState = GAME_STATES.HUB;
+                audio.playSfx('blip');
+            }
+        }
+    }
+
+    // HUB SCREEN
+    const hubUI = {
+        trainBtn: { x: 50, y: 530, w: 200, h: 50 },
+        playBtn: { x: 550, y: 530, w: 200, h: 50 },
+        upgradeBtn: { x: 450, y: 220, w: 300, h: 40 },
+        recruitBtn: { x: 450, y: 400, w: 300, h: 40 },
+        recruitProspectBtn: { x: 450, y: 450, w: 300, h: 40 },
+        rosterRect: { x: 50, y: 80, w: 350, h: 420 }
+    };
+
+    function updateHub() {
+        if (!mouse.click) return;
+
+        // Roster Selection
+        if (isInside(mouse, hubUI.rosterRect)) {
+            const index = Math.floor((mouse.y - hubUI.rosterRect.y - 10) / 100);
+            if (index >= 0 && index < game.playerNation.roster.length) {
+                game.selectedAthleteIndex = index;
+                audio.playSfx('blip');
+            }
+        }
+
+        // Train
+        if (isInside(mouse, hubUI.trainBtn)) {
+             if (game.month >= 3) {
+                 game.month -= 3;
+                 const athlete = game.playerNation.roster[game.selectedAthleteIndex];
+                 if (athlete) {
+                     athlete.train(game.playerNation.facilities.aquatics);
+                     audio.playSfx('blip');
+                 }
+             }
+        }
+
+        // Upgrade Facilities
+        if (isInside(mouse, hubUI.upgradeBtn)) {
+            const cost = game.playerNation.facilities.aquatics * 5000;
+            if (game.playerNation.money >= cost && game.playerNation.facilities.aquatics < 10) {
+                game.playerNation.money -= cost;
+                game.playerNation.facilities.aquatics++;
+                audio.playSfx('blip');
+            }
+        }
+
+        // Recruit Walk-on (Free)
+        if (isInside(mouse, hubUI.recruitBtn)) {
+             if (game.playerNation.roster.length < 5) { // Cap roster size
+                 game.playerNation.roster.push(game.playerNation.createAthlete(false));
+                 audio.playSfx('blip');
+             }
+        }
+
+        // Recruit Prospect ($5000)
+        if (isInside(mouse, hubUI.recruitProspectBtn)) {
+             if (game.playerNation.money >= 5000 && game.playerNation.roster.length < 5) {
+                 game.playerNation.money -= 5000;
+                 game.playerNation.roster.push(game.playerNation.createAthlete(true));
+                 audio.playSfx('blip');
+             }
+        }
+
+        // Play
+        if (isInside(mouse, hubUI.playBtn)) {
+            if (game.month <= 0) {
+                game.state = GAME_STATES.RACE;
+                currentState = GAME_STATES.RACE;
+                // Initialize Race Logic Here if needed
+                startRace();
+                audio.playSfx('blip');
+            }
+        }
+
+        mouse.click = false; // Consume click immediately
+    }
+
+    function drawHub() {
+        // Dynamic Theming
+        const hostColor = game.currentHost ? game.currentHost.primary : COLORS.headerYellow;
+        const hostSecColor = game.currentHost ? game.currentHost.secondary : COLORS.white;
+
+        // Header
+        ctx.fillStyle = hostColor;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, 60);
+        drawText(`ROAD TO ${game.currentHost.name.toUpperCase()} ${game.year + 4}`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
+
+        // Money
+        drawText(`$${game.playerNation.money}`, 780, 40, 16, COLORS.white, 'right');
+
+        // Roster Panel
+        drawRect(hubUI.rosterRect.x, hubUI.rosterRect.y, hubUI.rosterRect.w, hubUI.rosterRect.h, COLORS.panelGray, true);
+        drawText("ROSTER", hubUI.rosterRect.x + 10, hubUI.rosterRect.y - 10, 16, COLORS.white);
+
+        game.playerNation.roster.forEach((athlete, i) => {
+            const y = hubUI.rosterRect.y + 10 + (i * 100);
+            const isSelected = i === game.selectedAthleteIndex;
+
+            // Athlete Card
+            ctx.fillStyle = isSelected ? COLORS.white : '#DDD';
+            ctx.fillRect(hubUI.rosterRect.x + 10, y, hubUI.rosterRect.w - 20, 90);
+            if (isSelected) {
+                ctx.strokeStyle = COLORS.borderDark;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(hubUI.rosterRect.x + 10, y, hubUI.rosterRect.w - 20, 90);
+            }
+
+            // Info
+            drawText(athlete.name, hubUI.rosterRect.x + 20, y + 25, 14, COLORS.text);
+            drawText(`Age: ${athlete.age}`, hubUI.rosterRect.x + 20, y + 45, 12, COLORS.text);
+
+            // Stats Bars
+            const drawStat = (label, val, sy) => {
+                drawText(label, hubUI.rosterRect.x + 150, sy, 10, COLORS.text);
+                ctx.fillStyle = '#555';
+                ctx.fillRect(hubUI.rosterRect.x + 200, sy - 8, 100, 8);
+                ctx.fillStyle = val > 80 ? '#00AA00' : (val > 50 ? '#DDDD00' : '#AA0000');
+                ctx.fillRect(hubUI.rosterRect.x + 200, sy - 8, val, 8);
+            };
+
+            drawStat("SPD", athlete.speed, y + 25);
+            drawStat("STA", athlete.stamina, y + 45);
+            drawStat("TEC", athlete.technique, y + 65);
+
+            if (athlete.cycles > 3) {
+                 drawText("DECLINING", hubUI.rosterRect.x + 20, y + 75, 10, '#AA0000');
+            }
+        });
+
+        // Right Column
+        const rightX = 450;
+
+        // Calendar
+        drawRect(rightX, 80, 300, 100, COLORS.panelGray, true);
+        drawText("CALENDAR", rightX + 10, 70, 16, COLORS.white);
+        drawText(`${game.month} Months`, rightX + 150, 130, 24, COLORS.text, 'center');
+        drawText(`until Games`, rightX + 150, 160, 16, COLORS.text, 'center');
+
+        // Facilities
+        drawRect(rightX, 200, 300, 150, COLORS.panelGray, true);
+        drawText("FACILITIES", rightX + 10, 190, 16, COLORS.white);
+        drawText(`Aquatics Lvl ${game.playerNation.facilities.aquatics}`, rightX + 20, 245, 14, COLORS.text);
+
+        // Upgrade Button
+        const cost = game.playerNation.facilities.aquatics * 5000;
+        const canAfford = game.playerNation.money >= cost;
+        drawRect(hubUI.upgradeBtn.x, hubUI.upgradeBtn.y + 40, hubUI.upgradeBtn.w, hubUI.upgradeBtn.h, canAfford ? COLORS.headerYellow : '#777', true);
+        drawText(`UPGRADE ($${cost})`, hubUI.upgradeBtn.x + 150, hubUI.upgradeBtn.y + 70, 14, COLORS.text, 'center');
+
+        // Academy
+        drawRect(rightX, 380, 300, 120, COLORS.panelGray, true);
+        drawText("ACADEMY", rightX + 10, 370, 16, COLORS.white);
+
+        // Recruit Buttons
+        drawRect(hubUI.recruitBtn.x, hubUI.recruitBtn.y, hubUI.recruitBtn.w, hubUI.recruitBtn.h, COLORS.headerYellow, true);
+        drawText("WALK-ON (Free)", hubUI.recruitBtn.x + 150, hubUI.recruitBtn.y + 25, 12, COLORS.text, 'center');
+
+        drawRect(hubUI.recruitProspectBtn.x, hubUI.recruitProspectBtn.y, hubUI.recruitProspectBtn.w, hubUI.recruitProspectBtn.h, game.playerNation.money >= 5000 ? COLORS.headerYellow : '#777', true);
+        drawText("PROSPECT ($5k)", hubUI.recruitProspectBtn.x + 150, hubUI.recruitProspectBtn.y + 25, 12, COLORS.text, 'center');
+
+
+        // Footer Buttons
+        // Train
+        drawRect(hubUI.trainBtn.x, hubUI.trainBtn.y, hubUI.trainBtn.w, hubUI.trainBtn.h, game.month > 0 ? COLORS.headerYellow : '#777', true);
+        drawText("TRAIN (3mo)", hubUI.trainBtn.x + 100, hubUI.trainBtn.y + 35, 16, COLORS.text, 'center');
+
+        // Play
+        if (game.month <= 0) {
+            drawRect(hubUI.playBtn.x, hubUI.playBtn.y, hubUI.playBtn.w, hubUI.playBtn.h, '#00AA00', true); // Green for GO
+            drawText("PLAY GAMES", hubUI.playBtn.x + 100, hubUI.playBtn.y + 35, 16, COLORS.white, 'center');
+        } else {
+             drawRect(hubUI.playBtn.x, hubUI.playBtn.y, hubUI.playBtn.w, hubUI.playBtn.h, '#555', true);
+             drawText("WAIT...", hubUI.playBtn.x + 100, hubUI.playBtn.y + 35, 16, '#999', 'center');
+        }
+    }
+
+    function drawStart() {
+        // Draw Map
+        const blockSize = 15;
+        const mapW = 20 * blockSize;
+        const mapH = 10 * blockSize;
+        const startX = (CANVAS_WIDTH - mapW) / 2;
+        const startY = 50;
+
+        // Draw Map Background
+        // ctx.fillStyle = COLORS.oceanBlue;
+        // ctx.fillRect(startX, startY, mapW, mapH);
+
+        for (let r = 0; r < WORLD_MAP.length; r++) {
+            for (let c = 0; c < WORLD_MAP[r].length; c++) {
+                const char = WORLD_MAP[r][c];
+                const x = startX + c * blockSize;
+                const y = startY + r * blockSize;
+                ctx.fillStyle = char === '1' ? COLORS.landGreen : COLORS.oceanBlue;
+                ctx.fillRect(x, y, blockSize, blockSize);
+            }
+        }
+
+        // Draw Title
+        drawText("WORLD SUMMER ATHLETICS", CANVAS_WIDTH/2, 250, 24, COLORS.text, 'center');
+        drawText("Select Nation", CANVAS_WIDTH/2, 280, 16, COLORS.text, 'center');
+
+        // Draw Nation Cards
+        Object.values(startUI).forEach(btn => {
+            // Card BG
+            drawRect(btn.x, btn.y, btn.w, btn.h, COLORS.panelGray, true);
+
+            // Header Color
+            ctx.fillStyle = btn.color;
+            ctx.fillRect(btn.x + 4, btn.y + 4, btn.w - 8, 40);
+
+            // Nation Name
+            drawText(btn.name, btn.x + btn.w/2, btn.y + 35, 16, COLORS.white, 'center');
+
+            // Stats
+            const lines = btn.stats.split('\n');
+            lines.forEach((line, i) => {
+                drawText(line, btn.x + 20, btn.y + 80 + (i * 30), 12, COLORS.text, 'left');
+            });
+
+            // Hover effect
+            if (isInside(mouse, btn)) {
+                ctx.strokeStyle = COLORS.headerYellow;
+                ctx.lineWidth = 4;
+                ctx.strokeRect(btn.x - 2, btn.y - 2, btn.w + 4, btn.h + 4);
+            }
+        });
+    }
+
+    function update() {
+        if (currentState === GAME_STATES.START) updateStart();
+        if (currentState === GAME_STATES.HUB) updateHub();
+        if (currentState === GAME_STATES.RACE) updateRace();
+        if (currentState === GAME_STATES.RESULTS) updateResults();
+    }
+
+    function draw() {
+        // Clear screen
+        ctx.fillStyle = COLORS.bgBlue;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        if (currentState === GAME_STATES.START) drawStart();
+        if (currentState === GAME_STATES.HUB) drawHub();
+        if (currentState === GAME_STATES.RACE) drawRace();
+        if (currentState === GAME_STATES.RESULTS) drawResults();
+    }
+
+    function gameLoop() {
+        update();
+        draw();
+        // Reset single-frame inputs
+        mouse.click = false;
+        requestAnimationFrame(gameLoop);
+    }
+
+    // Start
+    requestAnimationFrame(gameLoop);
+
+</script>
+</body>
+</html>
