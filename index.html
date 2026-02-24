@@ -113,7 +113,11 @@
         START: 'START',
         HUB: 'HUB',
         RACE: 'RACE',
-        RESULTS: 'RESULTS'
+        RESULTS: 'RESULTS',
+        ROSTER: 'ROSTER',
+        ATHLETE_DETAIL: 'ATHLETE_DETAIL',
+        ACADEMY: 'ACADEMY',
+        HOF: 'HOF'
     };
 
     // --- Audio Controller ---
@@ -134,7 +138,6 @@
 
         playSfx(name) {
             if (this.sounds[name]) {
-                // Clone to allow overlapping sounds
                 const sfx = this.sounds[name].cloneNode();
                 sfx.play().catch(e => {});
             }
@@ -147,10 +150,14 @@
         constructor(name, age, speed, stamina, technique) {
             this.name = name;
             this.age = age;
+            this.sport = 'Swimmer'; // Default for MVP
             this.speed = speed;       // 1-100
             this.stamina = stamina;   // 1-100
             this.technique = technique; // 1-100
             this.cycles = 0; // Number of World Games participated in
+            this.medals = 0;
+            this.pb = null; // Personal Best time
+            this.hofTag = false; // Hall of Fame tag
         }
 
         train(facilityLevel) {
@@ -189,6 +196,7 @@
                 aquatics: 1 // Level 1-10
             };
             this.roster = [];
+            this.hallOfFame = [];
             this.baseStats = baseStats; // { speed: range, stamina: range... } for generating roster
         }
 
@@ -231,14 +239,14 @@
             this.playerNation = null;
             this.currentHost = null; // Will be set dynamically
             this.state = GAME_STATES.START;
-            this.selectedAthleteIndex = 0;
+            this.selectedAthlete = null; // Reference to object
         }
 
         start(nationChoice) {
             // nationChoice: 'USA', 'EGY', 'AUS'
             if (nationChoice === 'USA') {
                 this.playerNation = new Nation("USA", "#002868", "#BF0A30", {speed: 80, stamina: 70, technique: 70});
-                this.playerNation.money = 50000; // High facilities start? Or just money to buy them.
+                this.playerNation.money = 50000;
                 this.playerNation.facilities.aquatics = 5;
             } else if (nationChoice === 'EGY') {
                 this.playerNation = new Nation("Egypt", "#CE1126", "#000000", {speed: 40, stamina: 40, technique: 40});
@@ -254,17 +262,7 @@
         }
 
         setHost() {
-            // Determine host based on year
-            const nextGamesYear = this.year + 4; // Simplified logic, assumes we just finished a cycle or starting
-            // Wait, prompt says "2028 is LA... 2032 is Brisbane".
-            // If we start at 2024 (post-Paris?), the countdown is for 2028.
-
-            let targetYear = this.year + (48 - this.month)/12; // Roughly
-            // Actually simpler: We are preparing FOR a specific year.
-            // Let's say start year is 2024, preparing for 2028.
-
             const cycleYear = this.year + 4;
-
             if (cycleYear === 2028) this.currentHost = HOSTS[2028];
             else if (cycleYear === 2032) this.currentHost = HOSTS[2032];
             else {
@@ -313,7 +311,7 @@
         ctx.fillStyle = color;
         ctx.fillRect(x, y, w, h);
         if (border) {
-            ctx.strokeStyle = COLORS.borderDark;
+            ctx.strokeStyle = COLORS.black; // Prompt says "solid 4px black borders"
             ctx.lineWidth = 4;
             ctx.strokeRect(x, y, w, h);
         }
@@ -332,7 +330,322 @@
 
     // --- State Implementations ---
 
-    // RACE LOGIC
+    // 1. START SCREEN (Full Screen Map)
+    const startPins = [
+        { x: 140, y: 180, r: 15, code: 'USA', name: 'USA', color: '#002868', funds: '$50k', stats: { spd: 80, sta: 70, tec: 70 } },
+        { x: 440, y: 220, r: 15, code: 'EGY', name: 'Egypt', color: '#CE1126', funds: '$10k', stats: { spd: 40, sta: 40, tec: 40 } },
+        { x: 700, y: 380, r: 15, code: 'AUS', name: 'Australia', color: '#00843D', funds: '$25k', stats: { spd: 70, sta: 60, tec: 80 } }
+    ];
+
+    function updateStart() {
+        if (mouse.click) {
+            startPins.forEach(pin => {
+                const dist = Math.sqrt((mouse.x - pin.x)**2 + (mouse.y - pin.y)**2);
+                if (dist < pin.r + 15) {
+                    game.start(pin.code);
+                    if (game.state === GAME_STATES.HUB) {
+                        currentState = GAME_STATES.HUB;
+                        audio.playSfx('blip');
+                    }
+                }
+            });
+        }
+    }
+
+    function drawStart() {
+        // Full Screen Map 800x600 using 40px blocks
+        const blockSize = 40;
+        const startY = 100; // Center the 20x10 map vertically (400px tall), padding 100 top/bottom
+
+        // Ocean Background
+        ctx.fillStyle = COLORS.oceanBlue;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Render Map
+        for (let r = 0; r < WORLD_MAP.length; r++) {
+            for (let c = 0; c < WORLD_MAP[r].length; c++) {
+                const char = WORLD_MAP[r][c];
+                const x = c * blockSize;
+                const y = startY + r * blockSize;
+                if (char === '1') {
+                    ctx.fillStyle = COLORS.landGreen;
+                    ctx.fillRect(x, y, blockSize, blockSize);
+                }
+            }
+        }
+
+        // Overlay Title
+        drawRect(100, 20, 600, 60, '#000000AA');
+        drawText("WORLD SUMMER ATHLETICS", CANVAS_WIDTH/2, 60, 24, COLORS.white, 'center');
+        drawText("Select Nation", CANVAS_WIDTH/2, 580, 16, COLORS.white, 'center');
+
+        // Pins & Hover Cards
+        startPins.forEach(pin => {
+            const isHover = Math.sqrt((mouse.x - pin.x)**2 + (mouse.y - pin.y)**2) < pin.r + 15;
+
+            // Pin Body
+            ctx.fillStyle = isHover ? COLORS.headerYellow : pin.color;
+            ctx.beginPath();
+            ctx.arc(pin.x, pin.y, pin.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = COLORS.white;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Hover Card
+            if (isHover) {
+                const cardW = 280;
+                const cardH = 220;
+                let cardX = pin.x + 30;
+                let cardY = pin.y - 100;
+
+                // Keep inside screen
+                if (cardX + cardW > CANVAS_WIDTH) cardX = pin.x - cardW - 30;
+                if (cardY < 0) cardY = 10;
+                if (cardY + cardH > CANVAS_HEIGHT) cardY = CANVAS_HEIGHT - cardH - 10;
+
+                drawRect(cardX, cardY, cardW, cardH, COLORS.panelGray, true);
+
+                // Header
+                ctx.fillStyle = pin.color;
+                ctx.fillRect(cardX + 4, cardY + 4, cardW - 8, 40);
+                drawText(pin.name, cardX + cardW/2, cardY + 30, 16, COLORS.white, 'center');
+
+                // Funds
+                drawText(`Funds: ${pin.funds}`, cardX + 20, cardY + 70, 12, COLORS.text);
+
+                // Stat Bars
+                const drawBar = (label, val, sy) => {
+                    drawText(label, cardX + 20, sy, 10, COLORS.text);
+                    // Dark Track
+                    ctx.fillStyle = '#222';
+                    ctx.fillRect(cardX + 110, sy - 8, 140, 12);
+                    // Fill
+                    ctx.fillStyle = pin.color;
+                    ctx.fillRect(cardX + 110, sy - 8, val * 1.4, 12);
+                };
+
+                drawBar("SPEED", pin.stats.spd, cardY + 100);
+                drawBar("STAMINA", pin.stats.sta, cardY + 130);
+                drawBar("TECH", pin.stats.tec, cardY + 160);
+            }
+        });
+    }
+
+    // 2. THE HUB (Front Office)
+    const hubUI = {
+        trainBtn: { x: 550, y: 500, w: 200, h: 60 },
+        rosterBtn: { x: 50, y: 400, w: 220, h: 50 },
+        academyBtn: { x: 50, y: 460, w: 220, h: 50 },
+        hofBtn: { x: 50, y: 520, w: 220, h: 50 }
+    };
+
+    function updateHub() {
+        if (!mouse.click) return;
+
+        // Navigation
+        if (isInside(mouse, hubUI.rosterBtn)) {
+            currentState = GAME_STATES.ROSTER;
+            audio.playSfx('blip');
+        }
+
+        // Train / Play
+        if (isInside(mouse, hubUI.trainBtn)) {
+             if (game.month > 0) {
+                 if (game.month >= 3) {
+                     // Train random or selected? "Train improves selected athlete".
+                     // But here we are in Hub, not Roster.
+                     // Let's assume Train advances time and gives small global boost or just waits.
+                     // The prompt says "Clicking 'Train' costs 3 months. Hitting 0 triggers World Games."
+                     // And "Clicking 'Train' improves the stats for the currently selected athlete."
+                     // If no athlete selected (default), maybe select first.
+                     if (!game.selectedAthlete && game.playerNation.roster.length > 0) {
+                         game.selectedAthlete = game.playerNation.roster[0];
+                     }
+                     if (game.selectedAthlete) {
+                         game.month -= 3;
+                         game.selectedAthlete.train(game.playerNation.facilities.aquatics);
+                         audio.playSfx('blip');
+                     }
+                 }
+             } else {
+                 // GO TO GAMES
+                 startRace();
+                 audio.playSfx('blip');
+             }
+        }
+
+        mouse.click = false;
+    }
+
+    function drawHub() {
+        // Dynamic Theming
+        const hostColor = game.currentHost ? game.currentHost.primary : COLORS.headerYellow;
+        const hostSecColor = game.currentHost ? game.currentHost.secondary : COLORS.white;
+
+        // Top Banner
+        ctx.fillStyle = hostColor;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
+        drawText(`ROAD TO ${game.currentHost.name.toUpperCase()} ${game.year + 4}`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
+        drawText(`Funds: $${game.playerNation.money}`, CANVAS_WIDTH - 20, 70, 16, COLORS.white, 'right');
+
+        // Center Info (Calendar & Facilities)
+        // Calendar
+        drawRect(300, 150, 200, 120, COLORS.panelGray, true);
+        drawText("CALENDAR", 400, 180, 16, COLORS.text, 'center');
+        drawText(`${game.month}`, 400, 230, 40, COLORS.text, 'center');
+        drawText("MONTHS LEFT", 400, 260, 12, COLORS.text, 'center');
+
+        // Facility
+        drawRect(300, 300, 200, 100, COLORS.panelGray, true);
+        drawText("FACILITIES", 400, 330, 16, COLORS.text, 'center');
+        drawText(`Aquatics: ${game.playerNation.facilities.aquatics}`, 400, 360, 14, COLORS.text, 'center');
+
+        // Navigation Buttons
+        const drawBtn = (btn, text, color = COLORS.panelGray) => {
+            drawRect(btn.x, btn.y, btn.w, btn.h, color, true);
+            drawText(text, btn.x + btn.w/2, btn.y + btn.h/2 + 5, 14, COLORS.text, 'center');
+        };
+
+        drawBtn(hubUI.rosterBtn, "ROSTER");
+        drawBtn(hubUI.academyBtn, "YOUTH ACADEMY");
+        drawBtn(hubUI.hofBtn, "HALL OF FAME");
+
+        // Train Button logic
+        const trainColor = game.month > 0 ? COLORS.headerYellow : '#00AA00';
+        const trainText = game.month > 0 ? "TRAIN (3mo)" : "GO TO GAMES";
+        drawRect(hubUI.trainBtn.x, hubUI.trainBtn.y, hubUI.trainBtn.w, hubUI.trainBtn.h, trainColor, true);
+        drawText(trainText, hubUI.trainBtn.x + 100, hubUI.trainBtn.y + 35, 16, game.month > 0 ? COLORS.text : COLORS.white, 'center');
+
+        // Selected Athlete Info snippet
+        if (game.selectedAthlete) {
+            drawText(`Training: ${game.selectedAthlete.name}`, 400, 550, 12, COLORS.white, 'center');
+        }
+    }
+
+    // 3. ROSTER SCREEN
+    const rosterUI = {
+        backBtn: { x: 50, y: 530, w: 150, h: 50 },
+        listStartY: 120,
+        itemH: 60
+    };
+
+    function updateRoster() {
+        if (!mouse.click) return;
+
+        if (isInside(mouse, rosterUI.backBtn)) {
+            currentState = GAME_STATES.HUB;
+            audio.playSfx('blip');
+        }
+
+        // List clicks
+        game.playerNation.roster.forEach((athlete, i) => {
+            const y = rosterUI.listStartY + (i * (rosterUI.itemH + 10));
+            if (mouse.y > y && mouse.y < y + rosterUI.itemH && mouse.x > 50 && mouse.x < 750) {
+                game.selectedAthlete = athlete;
+                currentState = GAME_STATES.ATHLETE_DETAIL;
+                audio.playSfx('blip');
+            }
+        });
+
+        mouse.click = false;
+    }
+
+    function drawRoster() {
+        // Banner
+        ctx.fillStyle = game.playerNation.primaryColor;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
+        drawText("TEAM ROSTER", CANVAS_WIDTH/2, 50, 24, COLORS.white, 'center');
+
+        // List
+        game.playerNation.roster.forEach((athlete, i) => {
+            const y = rosterUI.listStartY + (i * (rosterUI.itemH + 10));
+            drawRect(50, y, 700, rosterUI.itemH, COLORS.panelGray, true);
+
+            // Name
+            drawText(athlete.name, 70, y + 35, 16, COLORS.text);
+            // Sport
+            drawText(athlete.sport, 300, y + 35, 14, '#555');
+            // Age
+            drawText(`Age: ${athlete.age}`, 500, y + 35, 14, COLORS.text);
+            // Condition
+            let cond = "OK";
+            if (athlete.cycles > 3) cond = "OLD";
+            drawText(cond, 650, y + 35, 14, cond === 'OLD' ? '#AA0000' : '#00AA00');
+        });
+
+        // Back
+        drawRect(rosterUI.backBtn.x, rosterUI.backBtn.y, rosterUI.backBtn.w, rosterUI.backBtn.h, COLORS.headerYellow, true);
+        drawText("BACK", rosterUI.backBtn.x + 75, rosterUI.backBtn.y + 30, 16, COLORS.text, 'center');
+    }
+
+    // 4. ATHLETE DETAIL SCREEN
+    const detailUI = {
+        backBtn: { x: 50, y: 530, w: 150, h: 50 },
+        tagBtn: { x: 550, y: 530, w: 200, h: 50 }
+    };
+
+    function updateDetail() {
+        if (!mouse.click) return;
+
+        if (isInside(mouse, detailUI.backBtn)) {
+            currentState = GAME_STATES.ROSTER;
+            audio.playSfx('blip');
+        }
+
+        if (isInside(mouse, detailUI.tagBtn)) {
+            game.selectedAthlete.hofTag = !game.selectedAthlete.hofTag;
+            audio.playSfx('blip');
+        }
+
+        mouse.click = false;
+    }
+
+    function drawDetail() {
+        const a = game.selectedAthlete;
+        if (!a) return;
+
+        // Banner
+        ctx.fillStyle = game.playerNation.primaryColor;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
+        drawText(a.name.toUpperCase(), CANVAS_WIDTH/2, 50, 24, COLORS.white, 'center');
+
+        // Info Panel
+        drawRect(50, 100, 700, 400, COLORS.panelGray, true);
+
+        drawText(`Age: ${a.age}`, 100, 150, 20, COLORS.text);
+        drawText(`Sport: ${a.sport}`, 100, 190, 20, COLORS.text);
+
+        // Stats
+        const drawBigBar = (label, val, y) => {
+            drawText(label, 100, y, 16, COLORS.text);
+            ctx.fillStyle = '#222'; // Dark track
+            ctx.fillRect(250, y - 16, 400, 20);
+            ctx.fillStyle = game.playerNation.secondaryColor;
+            ctx.fillRect(250, y - 16, val * 4, 20); // 100 * 4 = 400 width
+        };
+
+        drawBigBar("SPEED", a.speed, 250);
+        drawBigBar("STAMINA", a.stamina, 300);
+        drawBigBar("TECHNIQUE", a.technique, 350);
+
+        // Career
+        drawText(`World Games Cycles: ${a.cycles}`, 100, 420, 16, COLORS.text);
+        drawText(`Medals Won: ${a.medals}`, 100, 450, 16, COLORS.text);
+        drawText(`PB: ${a.pb ? a.pb.toFixed(2) + 's' : '--'}`, 400, 450, 16, COLORS.text);
+
+        // Buttons
+        drawRect(detailUI.backBtn.x, detailUI.backBtn.y, detailUI.backBtn.w, detailUI.backBtn.h, COLORS.headerYellow, true);
+        drawText("BACK", detailUI.backBtn.x + 75, detailUI.backBtn.y + 30, 16, COLORS.text, 'center');
+
+        // HoF Tag
+        const tagColor = a.hofTag ? '#00AA00' : '#777';
+        const tagText = a.hofTag ? "TAGGED FOR HOF" : "TAG FOR HOF";
+        drawRect(detailUI.tagBtn.x, detailUI.tagBtn.y, detailUI.tagBtn.w, detailUI.tagBtn.h, tagColor, true);
+        drawText(tagText, detailUI.tagBtn.x + 100, detailUI.tagBtn.y + 30, 14, COLORS.white, 'center');
+    }
+
+    // 5. RACE LOGIC (100m Freestyle)
     const RACE_PHASES = {
         BLOCKS: 0,
         DIVE: 1,
@@ -345,13 +658,13 @@
 
     const race = {
         phase: RACE_PHASES.BLOCKS,
-        distance: 0, // 0 to 100
+        distance: 0,
         speed: 0,
         stamina: 100,
         maxStamina: 100,
         timer: 0,
         lastInputTime: 0,
-        lane: 4, // Visual lane
+        lane: 4,
         feedback: { text: '', time: 0 },
         athlete: null,
         statSpeed: 0,
@@ -363,7 +676,9 @@
 
     function startRace() {
         currentState = GAME_STATES.RACE;
-        const athlete = game.playerNation.roster[game.selectedAthleteIndex];
+        const athlete = game.selectedAthlete; // Use selected
+        if (!athlete) return; // Should not happen
+
         race.athlete = athlete;
         race.statSpeed = athlete.speed;
         race.statStamina = athlete.stamina;
@@ -372,24 +687,21 @@
         race.phase = RACE_PHASES.BLOCKS;
         race.distance = 0;
         race.speed = 0;
-        race.maxStamina = athlete.stamina; // Or some derived value
+        race.maxStamina = athlete.stamina;
         race.stamina = race.maxStamina;
-        race.timer = -3000; // 3 second countdown
+        race.timer = -3000;
         race.lastInputTime = 0;
         race.feedback = { text: "READY", time: 100 };
     }
 
     function updateRace() {
-        // Delta time logic would be better but fixed step is okay for retro feel
-        race.timer += 16.6; // ~60fps
+        race.timer += 16.6;
 
-        // Input handling (detect key presses this frame)
         const pressedSpace = keys.Space && !race.lastFrameKeys.space;
         const pressedW = keys.KeyW && !race.lastFrameKeys.w;
         const pressedA = keys.KeyA && !race.lastFrameKeys.a;
         const pressedD = keys.KeyD && !race.lastFrameKeys.d;
 
-        // Update last frame keys
         race.lastFrameKeys.space = keys.Space;
         race.lastFrameKeys.w = keys.KeyW;
         race.lastFrameKeys.a = keys.KeyA;
@@ -406,10 +718,9 @@
             }
         }
         else if (race.phase === RACE_PHASES.DIVE) {
-             // Reaction time
              if (pressedSpace) {
-                 if (race.timer < 500) { // Quick reaction
-                      race.speed = 5 + (race.statSpeed / 20); // Initial burst
+                 if (race.timer < 500) {
+                      race.speed = 5 + (race.statSpeed / 20);
                       race.phase = RACE_PHASES.UNDERWATER;
                       race.feedback = { text: "GREAT DIVE!", time: 60 };
                       audio.playSfx('splash');
@@ -420,8 +731,7 @@
                       audio.playSfx('splash');
                  }
              }
-             // Auto dive if too late
-             if (race.timer > 1500 && race.phase === RACE_PHASES.DIVE) {
+             if (race.timer > 1500) {
                  race.speed = 2;
                  race.phase = RACE_PHASES.UNDERWATER;
                  race.feedback = { text: "LATE!", time: 60 };
@@ -429,24 +739,17 @@
              }
         }
         else if (race.phase === RACE_PHASES.UNDERWATER) {
-            // Decelerate
             race.speed *= 0.98;
-
-            // Dolphin Kicks
             if (pressedSpace) {
                 race.speed += 0.5 + (race.statSpeed / 200);
-                race.stamina -= 2; // High cost
+                race.stamina -= 2;
                 audio.playSfx('splash');
             }
-
-            // Surface
             if (pressedW) {
                 race.phase = RACE_PHASES.SWIMMING;
                 race.feedback = { text: "SURFACED", time: 30 };
             }
-
-            // 15m Rule
-            // Check first leg (15m) and return leg (50+15 = 65m)
+            // 15m Rule (Start and Turn return)
             if ((race.distance > 15 && race.distance < 50) || (race.distance > 65 && race.distance < 100)) {
                  race.phase = RACE_PHASES.DQ;
                  race.feedback = { text: "DQ! UNDERWATER > 15m", time: 200 };
@@ -454,27 +757,18 @@
             }
         }
         else if (race.phase === RACE_PHASES.SWIMMING) {
-            // Decelerate (Drag)
-            race.speed *= 0.97; // Stronger drag on surface
-
-            // Rhythm Input
+            race.speed *= 0.97;
             if (pressedA || pressedD) {
                 const now = Date.now();
                 const diff = now - race.lastInputTime;
                 race.lastInputTime = now;
-
-                // Ideal rhythm 500ms
-                // Tolerance: 400-600 is good.
-                // <300 is mashing.
-
                 if (diff < 300) {
                     race.stamina -= 3;
                     race.feedback = { text: "BAD! TOO FAST", time: 30 };
                 } else if (diff > 800) {
-                     race.speed += 0.2; // Slow recovery
+                     race.speed += 0.2;
                      race.feedback = { text: "TOO SLOW", time: 30 };
                 } else {
-                     // Good rhythm
                      const quality = Math.abs(500 - diff);
                      if (quality < 50) {
                          race.speed += 0.8 + (race.statSpeed / 300);
@@ -488,54 +782,51 @@
                 }
                 audio.playSfx('splash');
             }
-
-            // Turn Logic at 50m
             if (race.distance >= 50 && race.distance < 51) {
                  race.phase = RACE_PHASES.TURN;
                  race.feedback = { text: "TURN! PRESS SPACE", time: 100 };
-                 race.speed = 0; // Pause for turn
+                 race.speed = 0;
             }
         }
         else if (race.phase === RACE_PHASES.TURN) {
             if (pressedSpace) {
-                race.phase = RACE_PHASES.UNDERWATER; // Back underwater
-                race.distance = 50.1; // Push off
-                race.speed = 4 + (race.statTech / 25); // Push off speed
+                race.phase = RACE_PHASES.UNDERWATER;
+                race.distance = 50.1;
+                race.speed = 4 + (race.statTech / 25);
                 race.feedback = { text: "GREAT TURN!", time: 60 };
                 audio.playSfx('splash');
             }
         }
 
-        // Physics update
-
-        // Stamina penalty
         if (race.stamina <= 0) {
             race.stamina = 0;
-            const max = (4.0 * 0.2); // 20% max speed
+            const max = (4.0 * 0.2);
             if (race.speed > max) race.speed = max;
         }
 
-        // Move
         if (race.phase !== RACE_PHASES.BLOCKS && race.phase !== RACE_PHASES.TURN && race.phase !== RACE_PHASES.FINISH && race.phase !== RACE_PHASES.DQ) {
-            // Speed is m/s?
-            // 100m in 25s = 4m/s.
-            // 1 frame = 16ms = 0.016s.
-            // dist += speed * 0.016.
             race.distance += race.speed * 0.016;
         }
 
-        // Finish
         if (race.distance >= 100 && race.phase !== RACE_PHASES.FINISH) {
             race.phase = RACE_PHASES.FINISH;
             race.feedback = { text: "FINISHED!", time: 200 };
-            // Calculate funding
-            let prize = 0;
-            let rank = "4th"; // Placeholder logic for now
-            // Simulating other swimmers based on player time?
+
             const time = race.timer / 1000;
+            let prize = 0;
+            let rank = "4th";
             if (time < 26) { prize = 50000; rank = "1st"; }
             else if (time < 28) { prize = 25000; rank = "2nd"; }
             else if (time < 30) { prize = 10000; rank = "3rd"; }
+
+            // Update PB
+            if (!race.athlete.pb || time < race.athlete.pb) {
+                race.athlete.pb = time;
+            }
+            // Add Medals if 1st, 2nd, 3rd
+            if (rank !== "4th") {
+                race.athlete.medals++;
+            }
 
             game.playerNation.money += prize;
             game.lastRaceResult = { time: time, rank: rank, prize: prize };
@@ -545,21 +836,17 @@
             }, 2000);
         }
 
-        // Feedback timer
         if (race.feedback.time > 0) race.feedback.time--;
     }
 
     function drawRace() {
-        // Render Pool
         ctx.fillStyle = COLORS.waterBlue;
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-        // Lane Lines
         const laneHeight = 60;
         const startY = 100;
         const poolStart = 50;
         const poolEnd = 750;
-        const poolLengthPx = poolEnd - poolStart; // 700px for 50m -> 14px per meter
 
         ctx.strokeStyle = COLORS.laneLine;
         ctx.lineWidth = 2;
@@ -569,15 +856,10 @@
             ctx.moveTo(0, y);
             ctx.lineTo(CANVAS_WIDTH, y);
             ctx.stroke();
-
-            // Lane Numbers
-            if (i < 8) {
-                drawText(`${i+1}`, 20, y + 40, 20, '#FFFFFF55', 'center');
-            }
+            if (i < 8) drawText(`${i+1}`, 20, y + 40, 20, '#FFFFFF55', 'center');
         }
 
-        // 15m Line (Red)
-        // 15m from start
+        // 15m Lines
         const line15mX = poolStart + (15 * 14);
         ctx.strokeStyle = '#FF0000';
         ctx.lineWidth = 4;
@@ -587,7 +869,6 @@
         ctx.stroke();
         drawText("15m", line15mX, startY - 10, 10, '#FF0000', 'center');
 
-        // 15m from Turn (Return leg)
         const line15mReturnX = poolEnd - (15 * 14);
         ctx.beginPath();
         ctx.moveTo(line15mReturnX, startY);
@@ -597,10 +878,10 @@
 
         // Walls
         ctx.fillStyle = '#999';
-        ctx.fillRect(0, startY - 20, 50, (8 * laneHeight) + 40); // Left Wall
-        ctx.fillRect(750, startY - 20, 50, (8 * laneHeight) + 40); // Right Wall
+        ctx.fillRect(0, startY - 20, 50, (8 * laneHeight) + 40);
+        ctx.fillRect(750, startY - 20, 50, (8 * laneHeight) + 40);
 
-        // Draw Swimmer
+        // Swimmer
         let swimmerX = 0;
         let facingRight = true;
 
@@ -614,29 +895,22 @@
 
         const swimmerY = startY + (race.lane * laneHeight) - (laneHeight/2);
 
-        // Swimmer Body (Simple Shapes)
         ctx.save();
         ctx.translate(swimmerX, swimmerY);
         if (!facingRight) ctx.scale(-1, 1);
 
-        // Arms (Animation based on speed/time)
         const armAngle = Math.sin(race.timer * 0.01) * 1;
-
-        // Color based on nation
         const capColor = game.playerNation.primaryColor;
         const skinColor = '#FFCCAA';
 
-        // Body
         ctx.fillStyle = skinColor;
         ctx.fillRect(-15, -10, 30, 20);
 
-        // Head
         ctx.fillStyle = capColor;
         ctx.beginPath();
         ctx.arc(15, 0, 12, 0, Math.PI * 2);
         ctx.fill();
 
-        // Arms
         ctx.strokeStyle = skinColor;
         ctx.lineWidth = 6;
         ctx.beginPath();
@@ -646,48 +920,25 @@
 
         ctx.restore();
 
-        // Feedback Text (Above Swimmer)
         if (race.feedback.time > 0) {
             drawText(race.feedback.text, swimmerX, swimmerY - 40, 12, COLORS.white, 'center');
         }
 
-        // UI Overlay
-        // Top Bar
+        // Overlay
         drawRect(0, 0, CANVAS_WIDTH, 60, '#000000AA');
         drawText(`TIME: ${(race.timer/1000).toFixed(2)}`, 50, 40, 20, COLORS.white);
         drawText(`DIST: ${Math.min(100, race.distance).toFixed(1)}m`, 300, 40, 20, COLORS.white);
-
-        // Speed
         drawText(`SPD: ${race.speed.toFixed(1)} m/s`, 600, 40, 16, COLORS.white);
 
-        // Stamina Bar
+        // Stamina
         const barW = 200;
-        const barH = 20;
         const barX = CANVAS_WIDTH/2 - barW/2;
         const barY = 550;
-
-        drawRect(barX, barY, barW, barH, '#333', true);
+        drawRect(barX, barY, barW, 20, '#333', true);
         const stamPct = race.stamina / race.maxStamina;
-        const stamW = barW * stamPct;
         ctx.fillStyle = stamPct > 0.5 ? '#00FF00' : (stamPct > 0.2 ? '#FFFF00' : '#FF0000');
-        ctx.fillRect(barX, barY, stamW, barH);
+        ctx.fillRect(barX, barY, barW * stamPct, 20);
         drawText("STAMINA", barX, barY - 10, 12, COLORS.white);
-
-        // Controls hint
-        if (race.phase === RACE_PHASES.BLOCKS) {
-             drawText("READY...", CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 40, COLORS.white, 'center');
-        } else if (race.phase === RACE_PHASES.DIVE) {
-             drawText("SPACE!", CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 40, COLORS.white, 'center');
-        } else if (race.phase === RACE_PHASES.UNDERWATER) {
-             drawText("TAP SPACE! (Press W to surface)", CANVAS_WIDTH/2, 500, 16, COLORS.white, 'center');
-        } else if (race.phase === RACE_PHASES.SWIMMING) {
-             drawText("A / D Rhythm", CANVAS_WIDTH/2, 500, 16, COLORS.white, 'center');
-        } else if (race.phase === RACE_PHASES.DQ) {
-             drawText("DQ!", CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 60, '#FF0000', 'center');
-        } else if (race.phase === RACE_PHASES.FINISH) {
-             drawText("FINISH!", CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 60, COLORS.headerYellow, 'center');
-             drawText(`Time: ${(race.timer/1000).toFixed(2)}s`, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 60, 24, COLORS.white, 'center');
-        }
     }
 
     // RESULTS SCREEN
@@ -706,6 +957,14 @@
                 // Age up athletes
                 game.playerNation.roster.forEach(a => a.ageUp());
 
+                // Handle Retirement & HoF
+                const retiring = game.playerNation.roster.filter(a => a.shouldRetire());
+                retiring.forEach(a => {
+                    if (a.hofTag) {
+                        game.playerNation.hallOfFame.push(a);
+                    }
+                });
+
                 // Remove retired
                 game.playerNation.roster = game.playerNation.roster.filter(a => !a.shouldRetire());
 
@@ -718,273 +977,21 @@
     function drawResults() {
         const res = game.lastRaceResult;
 
-        // Background
         ctx.fillStyle = game.currentHost.primary;
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-        // Panel
         drawRect(200, 100, 400, 400, COLORS.panelGray, true);
 
-        // Header
         ctx.fillStyle = game.currentHost.secondary;
         ctx.fillRect(204, 104, 392, 60);
         drawText("RESULTS", 400, 150, 24, COLORS.white, 'center');
 
-        // Stats
         drawText(`RANK: ${res.rank}`, 400, 250, 30, COLORS.text, 'center');
         drawText(`TIME: ${res.time.toFixed(2)}s`, 400, 300, 20, COLORS.text, 'center');
         drawText(`PRIZE: $${res.prize}`, 400, 350, 20, '#00AA00', 'center');
 
-        // Continue
         drawRect(resultsUI.continueBtn.x, resultsUI.continueBtn.y, resultsUI.continueBtn.w, resultsUI.continueBtn.h, COLORS.headerYellow, true);
         drawText("CONTINUE", 400, 535, 16, COLORS.text, 'center');
-    }
-
-    // START SCREEN
-    const startUI = {
-        usa: { x: 50, y: 300, w: 200, h: 250, code: 'USA', name: 'USA', color: '#002868', stats: 'SPD: Hi\nSTA: Hi\nTEC: Hi\n$$$: Hi' },
-        egy: { x: 300, y: 300, w: 200, h: 250, code: 'EGY', name: 'Egypt', color: '#CE1126', stats: 'SPD: Lo\nSTA: Lo\nTEC: Lo\n$$$: Lo' },
-        aus: { x: 550, y: 300, w: 200, h: 250, code: 'AUS', name: 'Australia', color: '#00843D', stats: 'SPD: Hi\nSTA: Mid\nTEC: Hi\n$$$: Mid' }
-    };
-
-    function updateStart() {
-        if (mouse.click) {
-            if (isInside(mouse, startUI.usa)) game.start('USA');
-            else if (isInside(mouse, startUI.egy)) game.start('EGY');
-            else if (isInside(mouse, startUI.aus)) game.start('AUS');
-
-            if (game.state === GAME_STATES.HUB) {
-                currentState = GAME_STATES.HUB;
-                audio.playSfx('blip');
-            }
-        }
-    }
-
-    // HUB SCREEN
-    const hubUI = {
-        trainBtn: { x: 50, y: 530, w: 200, h: 50 },
-        playBtn: { x: 550, y: 530, w: 200, h: 50 },
-        upgradeBtn: { x: 450, y: 220, w: 300, h: 40 },
-        recruitBtn: { x: 450, y: 400, w: 300, h: 40 },
-        recruitProspectBtn: { x: 450, y: 450, w: 300, h: 40 },
-        rosterRect: { x: 50, y: 80, w: 350, h: 420 }
-    };
-
-    function updateHub() {
-        if (!mouse.click) return;
-
-        // Roster Selection
-        if (isInside(mouse, hubUI.rosterRect)) {
-            const index = Math.floor((mouse.y - hubUI.rosterRect.y - 10) / 100);
-            if (index >= 0 && index < game.playerNation.roster.length) {
-                game.selectedAthleteIndex = index;
-                audio.playSfx('blip');
-            }
-        }
-
-        // Train
-        if (isInside(mouse, hubUI.trainBtn)) {
-             if (game.month >= 3) {
-                 game.month -= 3;
-                 const athlete = game.playerNation.roster[game.selectedAthleteIndex];
-                 if (athlete) {
-                     athlete.train(game.playerNation.facilities.aquatics);
-                     audio.playSfx('blip');
-                 }
-             }
-        }
-
-        // Upgrade Facilities
-        if (isInside(mouse, hubUI.upgradeBtn)) {
-            const cost = game.playerNation.facilities.aquatics * 5000;
-            if (game.playerNation.money >= cost && game.playerNation.facilities.aquatics < 10) {
-                game.playerNation.money -= cost;
-                game.playerNation.facilities.aquatics++;
-                audio.playSfx('blip');
-            }
-        }
-
-        // Recruit Walk-on (Free)
-        if (isInside(mouse, hubUI.recruitBtn)) {
-             if (game.playerNation.roster.length < 5) { // Cap roster size
-                 game.playerNation.roster.push(game.playerNation.createAthlete(false));
-                 audio.playSfx('blip');
-             }
-        }
-
-        // Recruit Prospect ($5000)
-        if (isInside(mouse, hubUI.recruitProspectBtn)) {
-             if (game.playerNation.money >= 5000 && game.playerNation.roster.length < 5) {
-                 game.playerNation.money -= 5000;
-                 game.playerNation.roster.push(game.playerNation.createAthlete(true));
-                 audio.playSfx('blip');
-             }
-        }
-
-        // Play
-        if (isInside(mouse, hubUI.playBtn)) {
-            if (game.month <= 0) {
-                game.state = GAME_STATES.RACE;
-                currentState = GAME_STATES.RACE;
-                // Initialize Race Logic Here if needed
-                startRace();
-                audio.playSfx('blip');
-            }
-        }
-
-        mouse.click = false; // Consume click immediately
-    }
-
-    function drawHub() {
-        // Dynamic Theming
-        const hostColor = game.currentHost ? game.currentHost.primary : COLORS.headerYellow;
-        const hostSecColor = game.currentHost ? game.currentHost.secondary : COLORS.white;
-
-        // Header
-        ctx.fillStyle = hostColor;
-        ctx.fillRect(0, 0, CANVAS_WIDTH, 60);
-        drawText(`ROAD TO ${game.currentHost.name.toUpperCase()} ${game.year + 4}`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
-
-        // Money
-        drawText(`$${game.playerNation.money}`, 780, 40, 16, COLORS.white, 'right');
-
-        // Roster Panel
-        drawRect(hubUI.rosterRect.x, hubUI.rosterRect.y, hubUI.rosterRect.w, hubUI.rosterRect.h, COLORS.panelGray, true);
-        drawText("ROSTER", hubUI.rosterRect.x + 10, hubUI.rosterRect.y - 10, 16, COLORS.white);
-
-        game.playerNation.roster.forEach((athlete, i) => {
-            const y = hubUI.rosterRect.y + 10 + (i * 100);
-            const isSelected = i === game.selectedAthleteIndex;
-
-            // Athlete Card
-            ctx.fillStyle = isSelected ? COLORS.white : '#DDD';
-            ctx.fillRect(hubUI.rosterRect.x + 10, y, hubUI.rosterRect.w - 20, 90);
-            if (isSelected) {
-                ctx.strokeStyle = COLORS.borderDark;
-                ctx.lineWidth = 3;
-                ctx.strokeRect(hubUI.rosterRect.x + 10, y, hubUI.rosterRect.w - 20, 90);
-            }
-
-            // Info
-            drawText(athlete.name, hubUI.rosterRect.x + 20, y + 25, 14, COLORS.text);
-            drawText(`Age: ${athlete.age}`, hubUI.rosterRect.x + 20, y + 45, 12, COLORS.text);
-
-            // Stats Bars
-            const drawStat = (label, val, sy) => {
-                drawText(label, hubUI.rosterRect.x + 150, sy, 10, COLORS.text);
-                ctx.fillStyle = '#555';
-                ctx.fillRect(hubUI.rosterRect.x + 200, sy - 8, 100, 8);
-                ctx.fillStyle = val > 80 ? '#00AA00' : (val > 50 ? '#DDDD00' : '#AA0000');
-                ctx.fillRect(hubUI.rosterRect.x + 200, sy - 8, val, 8);
-            };
-
-            drawStat("SPD", athlete.speed, y + 25);
-            drawStat("STA", athlete.stamina, y + 45);
-            drawStat("TEC", athlete.technique, y + 65);
-
-            if (athlete.cycles > 3) {
-                 drawText("DECLINING", hubUI.rosterRect.x + 20, y + 75, 10, '#AA0000');
-            }
-        });
-
-        // Right Column
-        const rightX = 450;
-
-        // Calendar
-        drawRect(rightX, 80, 300, 100, COLORS.panelGray, true);
-        drawText("CALENDAR", rightX + 10, 70, 16, COLORS.white);
-        drawText(`${game.month} Months`, rightX + 150, 130, 24, COLORS.text, 'center');
-        drawText(`until Games`, rightX + 150, 160, 16, COLORS.text, 'center');
-
-        // Facilities
-        drawRect(rightX, 200, 300, 150, COLORS.panelGray, true);
-        drawText("FACILITIES", rightX + 10, 190, 16, COLORS.white);
-        drawText(`Aquatics Lvl ${game.playerNation.facilities.aquatics}`, rightX + 20, 245, 14, COLORS.text);
-
-        // Upgrade Button
-        const cost = game.playerNation.facilities.aquatics * 5000;
-        const canAfford = game.playerNation.money >= cost;
-        drawRect(hubUI.upgradeBtn.x, hubUI.upgradeBtn.y + 40, hubUI.upgradeBtn.w, hubUI.upgradeBtn.h, canAfford ? COLORS.headerYellow : '#777', true);
-        drawText(`UPGRADE ($${cost})`, hubUI.upgradeBtn.x + 150, hubUI.upgradeBtn.y + 70, 14, COLORS.text, 'center');
-
-        // Academy
-        drawRect(rightX, 380, 300, 120, COLORS.panelGray, true);
-        drawText("ACADEMY", rightX + 10, 370, 16, COLORS.white);
-
-        // Recruit Buttons
-        drawRect(hubUI.recruitBtn.x, hubUI.recruitBtn.y, hubUI.recruitBtn.w, hubUI.recruitBtn.h, COLORS.headerYellow, true);
-        drawText("WALK-ON (Free)", hubUI.recruitBtn.x + 150, hubUI.recruitBtn.y + 25, 12, COLORS.text, 'center');
-
-        drawRect(hubUI.recruitProspectBtn.x, hubUI.recruitProspectBtn.y, hubUI.recruitProspectBtn.w, hubUI.recruitProspectBtn.h, game.playerNation.money >= 5000 ? COLORS.headerYellow : '#777', true);
-        drawText("PROSPECT ($5k)", hubUI.recruitProspectBtn.x + 150, hubUI.recruitProspectBtn.y + 25, 12, COLORS.text, 'center');
-
-
-        // Footer Buttons
-        // Train
-        drawRect(hubUI.trainBtn.x, hubUI.trainBtn.y, hubUI.trainBtn.w, hubUI.trainBtn.h, game.month > 0 ? COLORS.headerYellow : '#777', true);
-        drawText("TRAIN (3mo)", hubUI.trainBtn.x + 100, hubUI.trainBtn.y + 35, 16, COLORS.text, 'center');
-
-        // Play
-        if (game.month <= 0) {
-            drawRect(hubUI.playBtn.x, hubUI.playBtn.y, hubUI.playBtn.w, hubUI.playBtn.h, '#00AA00', true); // Green for GO
-            drawText("PLAY GAMES", hubUI.playBtn.x + 100, hubUI.playBtn.y + 35, 16, COLORS.white, 'center');
-        } else {
-             drawRect(hubUI.playBtn.x, hubUI.playBtn.y, hubUI.playBtn.w, hubUI.playBtn.h, '#555', true);
-             drawText("WAIT...", hubUI.playBtn.x + 100, hubUI.playBtn.y + 35, 16, '#999', 'center');
-        }
-    }
-
-    function drawStart() {
-        // Draw Map
-        const blockSize = 15;
-        const mapW = 20 * blockSize;
-        const mapH = 10 * blockSize;
-        const startX = (CANVAS_WIDTH - mapW) / 2;
-        const startY = 50;
-
-        // Draw Map Background
-        // ctx.fillStyle = COLORS.oceanBlue;
-        // ctx.fillRect(startX, startY, mapW, mapH);
-
-        for (let r = 0; r < WORLD_MAP.length; r++) {
-            for (let c = 0; c < WORLD_MAP[r].length; c++) {
-                const char = WORLD_MAP[r][c];
-                const x = startX + c * blockSize;
-                const y = startY + r * blockSize;
-                ctx.fillStyle = char === '1' ? COLORS.landGreen : COLORS.oceanBlue;
-                ctx.fillRect(x, y, blockSize, blockSize);
-            }
-        }
-
-        // Draw Title
-        drawText("WORLD SUMMER ATHLETICS", CANVAS_WIDTH/2, 250, 24, COLORS.text, 'center');
-        drawText("Select Nation", CANVAS_WIDTH/2, 280, 16, COLORS.text, 'center');
-
-        // Draw Nation Cards
-        Object.values(startUI).forEach(btn => {
-            // Card BG
-            drawRect(btn.x, btn.y, btn.w, btn.h, COLORS.panelGray, true);
-
-            // Header Color
-            ctx.fillStyle = btn.color;
-            ctx.fillRect(btn.x + 4, btn.y + 4, btn.w - 8, 40);
-
-            // Nation Name
-            drawText(btn.name, btn.x + btn.w/2, btn.y + 35, 16, COLORS.white, 'center');
-
-            // Stats
-            const lines = btn.stats.split('\n');
-            lines.forEach((line, i) => {
-                drawText(line, btn.x + 20, btn.y + 80 + (i * 30), 12, COLORS.text, 'left');
-            });
-
-            // Hover effect
-            if (isInside(mouse, btn)) {
-                ctx.strokeStyle = COLORS.headerYellow;
-                ctx.lineWidth = 4;
-                ctx.strokeRect(btn.x - 2, btn.y - 2, btn.w + 4, btn.h + 4);
-            }
-        });
     }
 
     function update() {
@@ -992,10 +999,11 @@
         if (currentState === GAME_STATES.HUB) updateHub();
         if (currentState === GAME_STATES.RACE) updateRace();
         if (currentState === GAME_STATES.RESULTS) updateResults();
+        if (currentState === GAME_STATES.ROSTER) updateRoster();
+        if (currentState === GAME_STATES.ATHLETE_DETAIL) updateDetail();
     }
 
     function draw() {
-        // Clear screen
         ctx.fillStyle = COLORS.bgBlue;
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
@@ -1003,17 +1011,17 @@
         if (currentState === GAME_STATES.HUB) drawHub();
         if (currentState === GAME_STATES.RACE) drawRace();
         if (currentState === GAME_STATES.RESULTS) drawResults();
+        if (currentState === GAME_STATES.ROSTER) drawRoster();
+        if (currentState === GAME_STATES.ATHLETE_DETAIL) drawDetail();
     }
 
     function gameLoop() {
         update();
         draw();
-        // Reset single-frame inputs
         mouse.click = false;
         requestAnimationFrame(gameLoop);
     }
 
-    // Start
     requestAnimationFrame(gameLoop);
 
 </script>
