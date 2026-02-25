@@ -535,17 +535,23 @@
             ctx.fillStyle = hostColor;
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-            // 2. Confetti Falling (Keep for festive vibe)
+            // 2. Confetti Falling (Larger, Fluttering)
             const time = Date.now();
             const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00'];
             for (let i = 0; i < 50; i++) {
                 // Pseudo-random based on index
-                const x = (i * 1234567) % CANVAS_WIDTH;
+                const baseX = (i * 1234567) % CANVAS_WIDTH;
                 const speed = 1 + (i % 3);
                 const y = (time * speed * 0.1 + (i * 100)) % CANVAS_HEIGHT;
 
+                // Flutter
+                const flutter = Math.sin(time * 0.002 + i) * 20;
+                const x = baseX + flutter;
+
+                const size = (i % 2 === 0) ? 6 : 8;
+
                 ctx.fillStyle = colors[i % 4];
-                ctx.fillRect(x, y, 4, 4);
+                ctx.fillRect(x, y, size, size);
             }
         }
 
@@ -554,7 +560,34 @@
         ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
 
         if (game.month <= 0) {
-            drawText(`WELCOME TO THE ${game.currentHost.name.toUpperCase()} SUMMER GAMES!`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
+            // Smaller Text
+            drawText(`WELCOME TO THE ${game.currentHost.name.toUpperCase()} SUMMER GAMES!`, CANVAS_WIDTH/2, 40, 16, COLORS.white, 'center');
+
+            // Olympic Rings (Shifted UP)
+            const ringR = 15;
+            const ringY = 75; // Overlapping Banner Bottom slightly? Or just below. Banner is 80.
+            // Let's put them IN the banner or just below. Request said "Shift Rings UP... Calendar DOWN".
+            // Previous code had Rings at 110. Let's try 90.
+            const ringX = CANVAS_WIDTH / 2;
+            ctx.lineWidth = 3;
+
+            const topY = 90;
+            const botY = 105;
+            const centers = [
+                {x: ringX - 40, y: topY, c: '#0085C7'}, // Blue
+                {x: ringX, y: topY, c: '#000000'},      // Black
+                {x: ringX + 40, y: topY, c: '#DF0024'}, // Red
+                {x: ringX - 20, y: botY, c: '#F4C300'}, // Yellow
+                {x: ringX + 20, y: botY, c: '#009F3D'}  // Green
+            ];
+
+            centers.forEach(ring => {
+                ctx.strokeStyle = ring.c;
+                ctx.beginPath();
+                ctx.arc(ring.x, ring.y, ringR, 0, Math.PI*2);
+                ctx.stroke();
+            });
+
             // Subtle Alpha Fade Subtext
             const alpha = 0.5 + Math.abs(Math.sin(Date.now() * 0.002)) * 0.5;
             ctx.save();
@@ -567,13 +600,32 @@
             drawText("Go to ROSTER and select an athlete to TRAIN.", CANVAS_WIDTH/2, 350, 12, COLORS.text, 'center');
         }
 
-        // Calendar (Retro Panel)
-        drawRetroPanel(300, 150, 200, 120, COLORS.panelGray);
-        drawText("CALENDAR", 400, 180, 16, COLORS.text, 'center');
-        drawText(`${game.month}`, 400, 230, 40, COLORS.text, 'center');
-        drawText("MONTHS LEFT", 400, 260, 12, COLORS.text, 'center');
+        // Calendar (Retro Panel) - Shifted DOWN
+        drawRetroPanel(300, 200, 200, 120, COLORS.panelGray);
+        drawText("CALENDAR", 400, 230, 16, COLORS.text, 'center');
+        drawText(`${game.month}`, 400, 280, 40, COLORS.text, 'center');
+        drawText("MONTHS LEFT", 400, 310, 12, COLORS.text, 'center');
 
-        // Massive Buttons
+        // Running Track Background (Bottom)
+        const trackY = 400; // Behind buttons
+        const trackH = 200;
+        ctx.fillStyle = '#C62828'; // Red Track
+        ctx.fillRect(0, trackY, CANVAS_WIDTH, trackH);
+
+        // Lane Lines
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([20, 20]);
+        for(let i=1; i<4; i++) {
+            const ly = trackY + (i * 50);
+            ctx.beginPath();
+            ctx.moveTo(0, ly);
+            ctx.lineTo(CANVAS_WIDTH, ly);
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
+
+        // Massive Buttons (Same positions, just drawn over track)
         drawRetroPanel(hubUI.frontOfficeBtn.x, hubUI.frontOfficeBtn.y, hubUI.frontOfficeBtn.w, hubUI.frontOfficeBtn.h, COLORS.panelGray, "FRONT OFFICE");
         drawRetroPanel(hubUI.rosterBtn.x, hubUI.rosterBtn.y, hubUI.rosterBtn.w, hubUI.rosterBtn.h, COLORS.panelGray, "ROSTER");
         drawRetroPanel(hubUI.hofBtn.x, hubUI.hofBtn.y, hubUI.hofBtn.w, hubUI.hofBtn.h, COLORS.panelGray, "HALL OF FAME");
@@ -834,13 +886,23 @@
 
     // 4. ATHLETE DETAIL SCREEN
     const detailUI = {
-        backBtn: { x: 20, y: 20, w: 120, h: 40 }, // Universal Top-Left Back Button
-        trainBtn: { x: 50, y: 400, w: 700, h: 150 }, // Massive bottom third button
-        tagBtn: { x: 550, y: 20, w: 200, h: 40 } // Moved to top right
+        backBtn: { x: 20, y: 20, w: 120, h: 40 },
+        tagBtn: { x: 550, y: 20, w: 200, h: 40 },
+
+        // Dynamic Buttons
+        trainOnlyBtn: { x: 50, y: 400, w: 700, h: 150 }, // Standard (Month > 0 && != 24)
+
+        // Month 24 Split
+        trainSplitBtn: { x: 50, y: 400, w: 340, h: 150 },
+        champsSplitBtn: { x: 410, y: 400, w: 340, h: 150 },
+
+        // Games
+        gamesBtn: { x: 50, y: 400, w: 700, h: 150 }
     };
 
     function updateDetail() {
         if (!mouse.click) return;
+        const a = game.selectedAthlete;
 
         if (isInside(mouse, detailUI.backBtn)) {
             currentState = GAME_STATES.ROSTER;
@@ -848,36 +910,52 @@
         }
 
         if (isInside(mouse, detailUI.tagBtn)) {
-            game.selectedAthlete.hofTag = !game.selectedAthlete.hofTag;
+            a.hofTag = !a.hofTag;
             audio.playSfx('blip');
         }
 
-        if (isInside(mouse, detailUI.trainBtn)) {
-            const a = game.selectedAthlete;
-            if (a.sport === "100m Free") {
-                if (game.month > 0) {
-                    if (game.month >= 3) {
-                        game.month -= 3;
-                        startRace(false); // Training Mode
-                        audio.playSfx('blip');
-                    }
-                } else {
-                    // World Games
-                    startRace(true); // Competition Mode
-                    audio.playSfx('blip');
-                }
-            } else {
-                // Simulate other sports for now
-                if (game.month > 0 && game.month >= 3) {
-                    game.month -= 3;
-                    a.train(game.playerNation.facilities.aquatics); // Generic gain
-                    audio.playSfx('blip');
-                } else if (game.month <= 0) {
-                    // Sim competition
-                    a.medals += Math.random() > 0.5 ? 1 : 0;
-                    game.playerNation.money += 10000;
-                    currentState = GAME_STATES.RESULTS;
-                }
+        // Logic for Events
+        if (a.sport === "100m Free") {
+            // 1. Olympic Games (Month 0)
+            if (game.month <= 0) {
+                 if (isInside(mouse, detailUI.gamesBtn)) {
+                     startRace(false); // isWorldChamps = false
+                     audio.playSfx('blip');
+                 }
+            }
+            // 2. World Champs (Month 24)
+            else if (game.month === 24) {
+                 if (isInside(mouse, detailUI.trainSplitBtn)) {
+                     // Instant Train
+                     game.month -= 6;
+                     a.train(game.playerNation.facilities.aquatics);
+                     audio.playSfx('blip');
+                 }
+                 if (isInside(mouse, detailUI.champsSplitBtn)) {
+                     // World Champs Race
+                     game.month -= 6;
+                     startRace(true); // isWorldChamps = true
+                     audio.playSfx('blip');
+                 }
+            }
+            // 3. Standard Training (Month > 0)
+            else {
+                 if (isInside(mouse, detailUI.trainOnlyBtn)) {
+                     game.month -= 6;
+                     a.train(game.playerNation.facilities.aquatics);
+                     audio.playSfx('blip');
+                 }
+            }
+        } else {
+            // Sim logic for other sports (Placeholder)
+            if (game.month <= 0 && isInside(mouse, detailUI.gamesBtn)) {
+                // Sim Games
+                a.medals += Math.random() > 0.5 ? 1 : 0;
+                game.playerNation.money += 25000;
+                currentState = GAME_STATES.RESULTS;
+            } else if (isInside(mouse, detailUI.trainOnlyBtn)) {
+                game.month -= 6;
+                a.train(game.playerNation.facilities.aquatics);
             }
         }
 
@@ -917,28 +995,19 @@
         drawText(`Medals: ${a.medals}`, 80, 320, 16, COLORS.text);
         drawText(`PB: ${a.pb ? a.pb.toFixed(2) + 's' : '--'}`, 300, 320, 16, COLORS.text);
 
-        // Train Button
-        const canTrain = game.month >= 3;
-        const isGames = game.month <= 0;
-        let btnColor = canTrain ? '#00AA00' : '#999'; // Bright green as requested
-        let btnText = "TRAIN (3mo)";
-
-        if (isGames) {
-            btnColor = '#00AA00';
-            btnText = "COMPETE AT GAMES";
-        } else if (!canTrain) {
-            btnText = "WAITING FOR GAMES...";
+        // Buttons Logic
+        if (game.month <= 0) {
+            // Games
+            drawRetroPanel(detailUI.gamesBtn.x, detailUI.gamesBtn.y, detailUI.gamesBtn.w, detailUI.gamesBtn.h, '#00AA00', "COMPETE AT GAMES", 24);
+        } else if (game.month === 24) {
+            // World Champs Split
+            drawRetroPanel(detailUI.trainSplitBtn.x, detailUI.trainSplitBtn.y, detailUI.trainSplitBtn.w, detailUI.trainSplitBtn.h, '#999', "TRAIN (6mo)", 16);
+            drawRetroPanel(detailUI.champsSplitBtn.x, detailUI.champsSplitBtn.y, detailUI.champsSplitBtn.w, detailUI.champsSplitBtn.h, '#002395', "WORLD CHAMPS (6mo)", 16);
+        } else {
+            // Standard Train
+            drawRetroPanel(detailUI.trainOnlyBtn.x, detailUI.trainOnlyBtn.y, detailUI.trainOnlyBtn.w, detailUI.trainOnlyBtn.h, '#999', "TRAIN (6mo)", 24);
         }
 
-        if (a.sport !== "100m Free") {
-             // Indicate simulation for non-playable
-             if (!isGames) btnText = "TRAIN (Sim)";
-             else btnText = "COMPETE (Sim)";
-        }
-
-        drawRetroPanel(detailUI.trainBtn.x, detailUI.trainBtn.y, detailUI.trainBtn.w, detailUI.trainBtn.h, btnColor, btnText, 24);
-
-        // Buttons
         // Back
         drawRetroPanel(detailUI.backBtn.x, detailUI.backBtn.y, detailUI.backBtn.w, detailUI.backBtn.h, COLORS.headerYellow, "◀ BACK", 14);
 
@@ -1016,9 +1085,11 @@
 
     let isCompetitionMode = false;
 
-    function startRace(isCompetition) {
+    function startRace(isWorldChamps) {
         currentState = GAME_STATES.RACE;
-        isCompetitionMode = isCompetition;
+
+        // Store if this is World Champs (true) or Olympics (false)
+        race.isWorldChamps = isWorldChamps;
 
         const athlete = game.selectedAthlete; // Use selected
         if (!athlete) return;
@@ -1184,9 +1255,13 @@
             const time = race.timer / 1000;
             let prize = 0;
             let rank = "4th";
-            if (time < 26) { prize = 50000; rank = "1st"; }
-            else if (time < 28) { prize = 25000; rank = "2nd"; }
-            else if (time < 30) { prize = 10000; rank = "3rd"; }
+
+            // Prize Logic: World Champs = 50%, Olympics = 100%
+            const prizePool = race.isWorldChamps ? { 1: 25000, 2: 12500, 3: 5000 } : { 1: 50000, 2: 25000, 3: 10000 };
+
+            if (time < 26) { prize = prizePool[1]; rank = "1st"; }
+            else if (time < 28) { prize = prizePool[2]; rank = "2nd"; }
+            else if (time < 30) { prize = prizePool[3]; rank = "3rd"; }
 
             // Update PB
             if (!race.athlete.pb || time < race.athlete.pb) {
@@ -1247,6 +1322,30 @@
         ctx.fillRect(-1000, 0, 1050, CANVAS_HEIGHT);
         // Right Deck (750 to 2000)
         ctx.fillRect(750, 0, 1250, CANVAS_HEIGHT);
+
+        // Tiled Concrete Effect
+        ctx.strokeStyle = '#BDBDBD';
+        ctx.lineWidth = 1;
+        // Draw grid over left deck
+        for(let tx = -1000; tx <= 50; tx+=20) {
+            ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx, CANVAS_HEIGHT); ctx.stroke();
+        }
+        for(let ty = 0; ty <= CANVAS_HEIGHT; ty+=20) {
+            ctx.beginPath(); ctx.moveTo(-1000, ty); ctx.lineTo(50, ty); ctx.stroke();
+        }
+        // Draw grid over right deck
+        for(let tx = 750; tx <= 2000; tx+=20) {
+            ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx, CANVAS_HEIGHT); ctx.stroke();
+        }
+        for(let ty = 0; ty <= CANVAS_HEIGHT; ty+=20) {
+            ctx.beginPath(); ctx.moveTo(750, ty); ctx.lineTo(2000, ty); ctx.stroke();
+        }
+
+        // Inner Shadow (Dark Blue Border at water edge)
+        ctx.strokeStyle = '#01579B';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(poolStart, 0, poolEnd - poolStart, CANVAS_HEIGHT);
+
 
         // 2b. Water Lines (Anchored to World)
         ctx.fillStyle = '#81D4FA'; // Light Blue
@@ -1312,10 +1411,20 @@
         ctx.fillStyle = '#999';
         ctx.fillRect(poolStart - 50, startY - 20, 50, (8 * laneHeight) + 40);
 
-        // Starting Blocks (Chunky Gray)
+        // Starting Blocks (3D Effect)
         for(let i=0; i<8; i++) {
-             ctx.fillStyle = '#555'; // Darker gray block
-             ctx.fillRect(poolStart - 40, startY + (i*laneHeight) + 10, 40, 40);
+             const bx = poolStart - 40;
+             const by = startY + (i*laneHeight) + 10;
+             const bw = 40;
+             const bh = 40;
+
+             // Top Face
+             ctx.fillStyle = '#757575';
+             ctx.fillRect(bx, by, bw, bh - 10);
+
+             // Front Face (Darker)
+             ctx.fillStyle = '#424242';
+             ctx.fillRect(bx, by + bh - 10, bw, 10);
         }
 
         // Right Wall
@@ -1432,24 +1541,29 @@
     function updateResults() {
         if (mouse.click) {
             if (isInside(mouse, resultsUI.continueBtn)) {
-                // Advance 4 year cycle
-                game.year += 4;
-                game.month = 48;
-                game.setHost();
+                // If World Champs (game.month is 18 due to deduction), just return to Hub
+                // If Olympics (game.month <= 0), reset cycle
 
-                // Age up athletes
-                game.playerNation.roster.forEach(a => a.ageUp());
+                if (game.month <= 0) {
+                    // Advance 4 year cycle
+                    game.year += 4;
+                    game.month = 48;
+                    game.setHost();
 
-                // Handle Retirement & HoF
-                const retiring = game.playerNation.roster.filter(a => a.shouldRetire());
-                retiring.forEach(a => {
-                    if (a.hofTag) {
-                        game.playerNation.hallOfFame.push(a);
-                    }
-                });
+                    // Age up athletes
+                    game.playerNation.roster.forEach(a => a.ageUp());
 
-                // Remove retired
-                game.playerNation.roster = game.playerNation.roster.filter(a => !a.shouldRetire());
+                    // Handle Retirement & HoF
+                    const retiring = game.playerNation.roster.filter(a => a.shouldRetire());
+                    retiring.forEach(a => {
+                        if (a.hofTag) {
+                            game.playerNation.hallOfFame.push(a);
+                        }
+                    });
+
+                    // Remove retired
+                    game.playerNation.roster = game.playerNation.roster.filter(a => !a.shouldRetire());
+                }
 
                 audio.playSfx('blip');
                 currentState = GAME_STATES.HUB;
