@@ -530,38 +530,63 @@
 
         // Background (Festive if Games Time)
         if (game.month <= 0) {
-            // Gradient-like background using simple rectangles
             ctx.fillStyle = hostColor;
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-            // Draw Giant Torch in Background (Pixel Art style)
-            const torchX = CANVAS_WIDTH / 2;
-            const torchY = 300;
-            ctx.fillStyle = '#FFD54F'; // Gold
-            ctx.fillRect(torchX - 40, torchY, 80, 200); // Stand
+            // 1. Retro City Skyline (Silhouette)
+            ctx.save();
+            ctx.fillStyle = hostSec;
+            ctx.globalAlpha = 0.3;
+            // Seeded random for consistent skyline
+            let seed = 12345;
+            const random = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
 
-            // Flame
-            const flicker = Math.sin(Date.now() * 0.01) * 10;
-            ctx.fillStyle = '#FF5722'; // Orange
-            ctx.beginPath();
-            ctx.moveTo(torchX - 30, torchY);
-            ctx.lineTo(torchX + 30, torchY);
-            ctx.lineTo(torchX, torchY - 100 + flicker);
-            ctx.fill();
-
-            ctx.fillStyle = '#FFFF00'; // Yellow core
-            ctx.beginPath();
-            ctx.moveTo(torchX - 15, torchY);
-            ctx.lineTo(torchX + 15, torchY);
-            ctx.lineTo(torchX, torchY - 60 + flicker);
-            ctx.fill();
-
-            // Confetti / Flags
-            for (let i = 0; i < 10; i++) {
-                ctx.fillStyle = (i % 2 === 0) ? hostSec : '#FFFFFF';
-                const flagX = (CANVAS_WIDTH / 10) * i + 20;
-                ctx.fillRect(flagX, 80, 20, 40);
+            let skyX = 0;
+            while (skyX < CANVAS_WIDTH) {
+                const w = 30 + random() * 50;
+                const h = 100 + random() * 200;
+                ctx.fillRect(skyX, CANVAS_HEIGHT - h, w, h);
+                skyX += w - 5; // Slight overlap
             }
+            ctx.restore();
+
+            // 2. Confetti Falling
+            const time = Date.now();
+            const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00'];
+            for (let i = 0; i < 50; i++) {
+                // Pseudo-random based on index
+                const x = (i * 1234567) % CANVAS_WIDTH;
+                const speed = 1 + (i % 3);
+                const y = (time * speed * 0.1 + (i * 100)) % CANVAS_HEIGHT;
+
+                ctx.fillStyle = colors[i % 4];
+                ctx.fillRect(x, y, 4, 4);
+            }
+
+            // 3. Olympic Rings
+            const ringR = 20;
+            const ringY = 110;
+            const ringX = CANVAS_WIDTH / 2;
+            const gap = 10;
+            ctx.lineWidth = 4;
+
+            // Blue, Black, Red (Top)
+            const topY = ringY;
+            const botY = ringY + 20;
+            const centers = [
+                {x: ringX - 50, y: topY, c: '#0085C7'}, // Blue
+                {x: ringX, y: topY, c: '#000000'},      // Black
+                {x: ringX + 50, y: topY, c: '#DF0024'}, // Red
+                {x: ringX - 25, y: botY, c: '#F4C300'}, // Yellow
+                {x: ringX + 25, y: botY, c: '#009F3D'}  // Green
+            ];
+
+            centers.forEach(ring => {
+                ctx.strokeStyle = ring.c;
+                ctx.beginPath();
+                ctx.arc(ring.x, ring.y, ringR, 0, Math.PI*2);
+                ctx.stroke();
+            });
         }
 
         // Top Banner
@@ -1028,8 +1053,12 @@
             if (race.stamina > 0 && race.speed < 0.5) race.speed = 0.5;
 
             if (pressedSpace) {
-                race.speed += 0.5 + (race.statSpeed / 200);
-                race.stamina -= 2;
+                // Dolphin Kick
+                const boost = 1.5 + (race.statTech / 150);
+                const drain = 1.0 * (1 - (race.statStamina / 200));
+
+                race.speed += boost;
+                race.stamina -= drain;
                 audio.playSfx('splash');
             }
             if (pressedW) {
@@ -1044,7 +1073,7 @@
             }
         }
         else if (race.phase === RACE_PHASES.SWIMMING) {
-            race.speed *= 0.97;
+            race.speed *= 0.98; // Uniform friction
             // Friction Floor
             if (race.stamina > 0 && race.speed < 0.5) race.speed = 0.5;
 
@@ -1060,15 +1089,22 @@
                      race.feedback = { text: "TOO SLOW", time: 30 };
                 } else {
                      const quality = Math.abs(500 - diff);
+                     let boost = 0;
+                     let drain = 0;
+
                      if (quality < 50) {
-                         race.speed += 0.8 + (race.statSpeed / 300);
-                         race.stamina -= 0.5;
+                         // PERFECT
+                         boost = 1.2 + (race.statSpeed / 200);
+                         drain = 0.5 * (1 - (race.statStamina / 200));
                          race.feedback = { text: "PERFECT!", time: 30 };
                      } else {
-                         race.speed += 0.5;
-                         race.stamina -= 1;
+                         // GOOD
+                         boost = 0.8 + (race.statSpeed / 300);
+                         drain = 0.5 * (1 - (race.statStamina / 200));
                          race.feedback = { text: "GOOD", time: 30 };
                      }
+                     race.speed += boost;
+                     race.stamina -= drain;
                 }
                 audio.playSfx('splash');
             }
@@ -1093,6 +1129,9 @@
             const max = (4.0 * 0.2);
             if (race.speed > max) race.speed = max;
         }
+
+        // Speed Cap
+        if (race.speed > 5.0) race.speed = 5.0;
 
         if (race.phase !== RACE_PHASES.BLOCKS && race.phase !== RACE_PHASES.TURN && race.phase !== RACE_PHASES.FINISH && race.phase !== RACE_PHASES.DQ) {
             race.distance += race.speed * 0.016;
@@ -1162,14 +1201,20 @@
         // Draw a massive rectangle covering potential view
         ctx.fillRect(-CANVAS_WIDTH, 0, CANVAS_WIDTH * 3, CANVAS_HEIGHT);
 
-        // 2. Scrolling Water Lines
+        // 2. Water Lines (Anchored to World)
         ctx.fillStyle = '#81D4FA'; // Light Blue
-        const scrollOffset = (performance.now() * 0.02) % 100;
+        const time = Date.now();
+
         for (let i = 0; i < 6; i++) {
             const y = startY + (i * 100) + 20;
-            // Draw long strips
-            for (let j = -10; j < 30; j++) {
-                 ctx.fillRect((j * 100) - scrollOffset, y, 60, 4);
+            // Draw lines from poolStart to poolEnd
+            let x = poolStart;
+            while (x < poolEnd) {
+                // Add tiny horizontal oscillation for "alive" feel
+                const offset = Math.sin(time * 0.005 + x * 0.01) * 3;
+
+                ctx.fillRect(x + offset, y, 40, 4);
+                x += 60; // Spacing
             }
         }
 
