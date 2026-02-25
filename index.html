@@ -147,7 +147,8 @@
         ROSTER: 'ROSTER',
         ATHLETE_DETAIL: 'ATHLETE_DETAIL',
         FRONT_OFFICE: 'FRONT_OFFICE',
-        HOF_SCREEN: 'HOF_SCREEN'
+        HOF_SCREEN: 'HOF_SCREEN',
+        DRAFT: 'DRAFT'
     };
 
     // --- Audio Controller ---
@@ -275,6 +276,7 @@
             this.currentHost = null; // Will be set dynamically
             this.state = GAME_STATES.START;
             this.selectedAthlete = null; // Reference to object
+            this.draftProspects = [];
         }
 
         start(nationChoice) {
@@ -533,24 +535,7 @@
             ctx.fillStyle = hostColor;
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-            // 1. Retro City Skyline (Silhouette)
-            ctx.save();
-            ctx.fillStyle = hostSec;
-            ctx.globalAlpha = 0.3;
-            // Seeded random for consistent skyline
-            let seed = 12345;
-            const random = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
-
-            let skyX = 0;
-            while (skyX < CANVAS_WIDTH) {
-                const w = 30 + random() * 50;
-                const h = 100 + random() * 200;
-                ctx.fillRect(skyX, CANVAS_HEIGHT - h, w, h);
-                skyX += w - 5; // Slight overlap
-            }
-            ctx.restore();
-
-            // 2. Confetti Falling
+            // 2. Confetti Falling (Keep for festive vibe)
             const time = Date.now();
             const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00'];
             for (let i = 0; i < 50; i++) {
@@ -562,31 +547,6 @@
                 ctx.fillStyle = colors[i % 4];
                 ctx.fillRect(x, y, 4, 4);
             }
-
-            // 3. Olympic Rings
-            const ringR = 20;
-            const ringY = 110;
-            const ringX = CANVAS_WIDTH / 2;
-            const gap = 10;
-            ctx.lineWidth = 4;
-
-            // Blue, Black, Red (Top)
-            const topY = ringY;
-            const botY = ringY + 20;
-            const centers = [
-                {x: ringX - 50, y: topY, c: '#0085C7'}, // Blue
-                {x: ringX, y: topY, c: '#000000'},      // Black
-                {x: ringX + 50, y: topY, c: '#DF0024'}, // Red
-                {x: ringX - 25, y: botY, c: '#F4C300'}, // Yellow
-                {x: ringX + 25, y: botY, c: '#009F3D'}  // Green
-            ];
-
-            centers.forEach(ring => {
-                ctx.strokeStyle = ring.c;
-                ctx.beginPath();
-                ctx.arc(ring.x, ring.y, ringR, 0, Math.PI*2);
-                ctx.stroke();
-            });
         }
 
         // Top Banner
@@ -595,12 +555,11 @@
 
         if (game.month <= 0) {
             drawText(`WELCOME TO THE ${game.currentHost.name.toUpperCase()} SUMMER GAMES!`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
-            // Pulsing Subtext
-            const scale = 1 + Math.sin(Date.now() * 0.005) * 0.1;
+            // Subtle Alpha Fade Subtext
+            const alpha = 0.5 + Math.abs(Math.sin(Date.now() * 0.002)) * 0.5;
             ctx.save();
-            ctx.translate(CANVAS_WIDTH/2, 350);
-            ctx.scale(scale, scale);
-            drawText("GAMES OPEN! Go to ROSTER -> ATHLETE -> COMPETE", 0, 0, 14, '#FFFF00', 'center');
+            ctx.globalAlpha = alpha;
+            drawText("GAMES OPEN! Go to ROSTER -> ATHLETE -> COMPETE", CANVAS_WIDTH/2, 350, 14, '#FFFF00', 'center');
             ctx.restore();
         } else {
             drawText(`ROAD TO ${game.currentHost.name.toUpperCase()} ${game.year}`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
@@ -654,11 +613,16 @@
              }
         }
 
-        // Recruit Paid
+        // Recruit Paid (Draft)
         if (isInside(mouse, officeUI.prospectBtn)) {
              if (game.playerNation.money >= 5000 && game.playerNation.roster.length < 5) {
                  game.playerNation.money -= 5000;
-                 game.playerNation.roster.push(game.playerNation.createAthlete(true));
+                 game.draftProspects = [
+                     game.playerNation.createAthlete(true),
+                     game.playerNation.createAthlete(true),
+                     game.playerNation.createAthlete(true)
+                 ];
+                 currentState = GAME_STATES.DRAFT;
                  audio.playSfx('blip');
              }
         }
@@ -701,6 +665,77 @@
 
         // Instructions
         drawText(`Roster: ${game.playerNation.roster.length}/5`, 225, 430, 14, COLORS.text, 'center');
+    }
+
+    // 3.5 DRAFT SCREEN
+    const draftUI = {
+        card1: { x: 50, y: 150, w: 220, h: 300 },
+        card2: { x: 290, y: 150, w: 220, h: 300 },
+        card3: { x: 530, y: 150, w: 220, h: 300 },
+        skipBtn: { x: 300, y: 500, w: 200, h: 60 }
+    };
+
+    function updateDraft() {
+        if (!mouse.click) return;
+
+        // Check Cards
+        [draftUI.card1, draftUI.card2, draftUI.card3].forEach((rect, i) => {
+             if (isInside(mouse, rect)) {
+                 game.playerNation.roster.push(game.draftProspects[i]);
+                 game.draftProspects = [];
+                 currentState = GAME_STATES.FRONT_OFFICE;
+                 audio.playSfx('blip');
+             }
+        });
+
+        // Skip
+        if (isInside(mouse, draftUI.skipBtn)) {
+            game.draftProspects = [];
+            currentState = GAME_STATES.FRONT_OFFICE;
+            audio.playSfx('blip');
+        }
+
+        mouse.click = false;
+    }
+
+    function drawDraft() {
+        ctx.fillStyle = game.playerNation.primaryColor;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        drawText("SELECT A PROSPECT", CANVAS_WIDTH/2, 60, 24, COLORS.white, 'center');
+        drawText("Or SKIP to discard search results", CANVAS_WIDTH/2, 90, 14, '#DDDDDD', 'center');
+
+        const cards = [draftUI.card1, draftUI.card2, draftUI.card3];
+        game.draftProspects.forEach((a, i) => {
+            const c = cards[i];
+            const isHover = isInside(mouse, c);
+            const bg = isHover ? COLORS.headerYellow : COLORS.panelGray;
+
+            drawRetroPanel(c.x, c.y, c.w, c.h, bg);
+
+            drawText(a.name, c.x + c.w/2, c.y + 40, 16, COLORS.text, 'center');
+            drawText(a.sport, c.x + c.w/2, c.y + 70, 14, '#555', 'center');
+
+            // Stats
+            const barY = c.y + 120;
+            const drawStat = (label, val, y) => {
+                drawText(label, c.x + 20, y, 12, COLORS.text);
+                ctx.fillStyle = '#222';
+                ctx.fillRect(c.x + 20, y + 10, 180, 10);
+                ctx.fillStyle = game.playerNation.secondaryColor;
+                ctx.fillRect(c.x + 20, y + 10, val * 1.8, 10);
+            };
+
+            drawStat("SPD", a.speed, barY);
+            drawStat("STA", a.stamina, barY + 40);
+            drawStat("TEC", a.technique, barY + 80);
+
+            drawText("CLICK TO RECRUIT", c.x + c.w/2, c.y + 250, 12, isHover ? '#000' : '#777', 'center');
+        });
+
+        // Skip Btn
+        const skipHover = isInside(mouse, draftUI.skipBtn);
+        drawRetroPanel(draftUI.skipBtn.x, draftUI.skipBtn.y, draftUI.skipBtn.w, draftUI.skipBtn.h, '#AA0000', "SKIP (LOSE FUNDS)");
     }
 
     // 4. ROSTER SCREEN
@@ -1075,30 +1110,35 @@
         else if (race.phase === RACE_PHASES.SWIMMING) {
             race.speed *= 0.98; // Uniform friction
             // Friction Floor
-            if (race.stamina > 0 && race.speed < 0.5) race.speed = 0.5;
+            let minSpeed = 0.5;
+            if (race.stamina <= 0) minSpeed = 1.5; // Crawl if dead tired
+            if (race.speed < minSpeed) race.speed = minSpeed;
 
             if (pressedA || pressedD) {
                 const now = Date.now();
                 const diff = now - race.lastInputTime;
                 race.lastInputTime = now;
-                if (diff < 300) {
+
+                let boost = 0;
+                let drain = 0;
+
+                if (diff < 200) {
+                    // TOO FAST
                     race.stamina -= 3;
-                    race.feedback = { text: "BAD! TOO FAST", time: 30 };
+                    race.feedback = { text: "TOO FAST!", time: 30 };
                 } else if (diff > 800) {
+                     // TOO SLOW
                      race.speed += 0.2;
                      race.feedback = { text: "TOO SLOW", time: 30 };
                 } else {
-                     const quality = Math.abs(500 - diff);
-                     let boost = 0;
-                     let drain = 0;
-
-                     if (quality < 50) {
-                         // PERFECT
+                     // VALID WINDOW (200-800)
+                     if (diff >= 400 && diff <= 600) {
+                         // PERFECT (400-600)
                          boost = 1.2 + (race.statSpeed / 200);
-                         drain = 0.5 * (1 - (race.statStamina / 200));
+                         drain = 0.2 * (1 - (race.statStamina / 200));
                          race.feedback = { text: "PERFECT!", time: 30 };
                      } else {
-                         // GOOD
+                         // GOOD (200-400 or 600-800)
                          boost = 0.8 + (race.statSpeed / 300);
                          drain = 0.5 * (1 - (race.statStamina / 200));
                          race.feedback = { text: "GOOD", time: 30 };
@@ -1201,7 +1241,14 @@
         // Draw a massive rectangle covering potential view
         ctx.fillRect(-CANVAS_WIDTH, 0, CANVAS_WIDTH * 3, CANVAS_HEIGHT);
 
-        // 2. Water Lines (Anchored to World)
+        // 2a. Pool Decks (Containment) - Draw BEFORE water lines or ropes
+        ctx.fillStyle = '#9E9E9E'; // Solid Gray Deck
+        // Left Deck (-1000 to 50)
+        ctx.fillRect(-1000, 0, 1050, CANVAS_HEIGHT);
+        // Right Deck (750 to 2000)
+        ctx.fillRect(750, 0, 1250, CANVAS_HEIGHT);
+
+        // 2b. Water Lines (Anchored to World)
         ctx.fillStyle = '#81D4FA'; // Light Blue
         const time = Date.now();
 
@@ -1440,6 +1487,7 @@
         if (currentState === GAME_STATES.START) updateStart();
         if (currentState === GAME_STATES.HUB) updateHub();
         if (currentState === GAME_STATES.FRONT_OFFICE) updateFrontOffice();
+        if (currentState === GAME_STATES.DRAFT) updateDraft();
         if (currentState === GAME_STATES.HOF_SCREEN) updateHoF();
         if (currentState === GAME_STATES.RACE) updateRace();
         if (currentState === GAME_STATES.RESULTS) updateResults();
@@ -1454,6 +1502,7 @@
         if (currentState === GAME_STATES.START) drawStart();
         if (currentState === GAME_STATES.HUB) drawHub();
         if (currentState === GAME_STATES.FRONT_OFFICE) drawFrontOffice();
+        if (currentState === GAME_STATES.DRAFT) drawDraft();
         if (currentState === GAME_STATES.HOF_SCREEN) drawHoF();
         if (currentState === GAME_STATES.RACE) drawRace();
         if (currentState === GAME_STATES.RESULTS) drawResults();
