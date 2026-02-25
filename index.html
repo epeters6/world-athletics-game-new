@@ -177,10 +177,10 @@
 
     // --- Data Classes ---
     class Athlete {
-        constructor(name, age, speed, stamina, technique) {
+        constructor(name, age, speed, stamina, technique, sport) {
             this.name = name;
             this.age = age;
-            this.sport = 'Swimmer'; // Default for MVP
+            this.sport = sport;
             this.speed = speed;       // 1-100
             this.stamina = stamina;   // 1-100
             this.technique = technique; // 1-100
@@ -297,9 +297,8 @@
         }
 
         setHost() {
-            const cycleYear = this.year + 4;
-            if (cycleYear === 2028) this.currentHost = HOSTS[2028];
-            else if (cycleYear === 2032) this.currentHost = HOSTS[2032];
+            if (this.year === 2028) this.currentHost = HOSTS[2028];
+            else if (this.year === 2032) this.currentHost = HOSTS[2032];
             else {
                 // Random from dictionary
                 const keys = Object.keys(CITY_DICTIONARY);
@@ -531,7 +530,7 @@
         // Top Banner
         ctx.fillStyle = hostColor;
         ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
-        drawText(`ROAD TO ${game.currentHost.name.toUpperCase()} ${game.year + 4}`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
+        drawText(`ROAD TO ${game.currentHost.name.toUpperCase()} ${game.year}`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
 
         // Calendar (Retro Panel)
         drawRetroPanel(300, 150, 200, 120, COLORS.panelGray);
@@ -580,7 +579,7 @@
 
         // Recruit Free
         if (isInside(mouse, officeUI.recruitBtn)) {
-             if (game.playerNation.roster.length < 10) {
+             if (game.playerNation.roster.length < 5) {
                  game.playerNation.roster.push(game.playerNation.createAthlete(false));
                  audio.playSfx('blip');
              }
@@ -588,7 +587,7 @@
 
         // Recruit Paid
         if (isInside(mouse, officeUI.prospectBtn)) {
-             if (game.playerNation.money >= 5000 && game.playerNation.roster.length < 10) {
+             if (game.playerNation.money >= 5000 && game.playerNation.roster.length < 5) {
                  game.playerNation.money -= 5000;
                  game.playerNation.roster.push(game.playerNation.createAthlete(true));
                  audio.playSfx('blip');
@@ -632,8 +631,7 @@
         drawRetroPanel(officeUI.prospectBtn.x, officeUI.prospectBtn.y, officeUI.prospectBtn.w, officeUI.prospectBtn.h, canAffordPro ? COLORS.headerYellow : '#999', "PROSPECT ($5k)");
 
         // Instructions
-        drawText("Recruit new athletes to fill your roster.", 225, 400, 12, COLORS.text, 'center');
-        drawText(`Roster: ${game.playerNation.roster.length}/10`, 225, 430, 14, COLORS.text, 'center');
+        drawText(`Roster: ${game.playerNation.roster.length}/5`, 225, 430, 14, COLORS.text, 'center');
     }
 
     // 4. ROSTER SCREEN
