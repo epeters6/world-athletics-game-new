@@ -526,11 +526,62 @@
     function drawHub() {
         // Dynamic Theming
         const hostColor = game.currentHost ? game.currentHost.primary : COLORS.headerYellow;
+        const hostSec = game.currentHost ? game.currentHost.secondary : COLORS.white;
+
+        // Background (Festive if Games Time)
+        if (game.month <= 0) {
+            // Gradient-like background using simple rectangles
+            ctx.fillStyle = hostColor;
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Draw Giant Torch in Background (Pixel Art style)
+            const torchX = CANVAS_WIDTH / 2;
+            const torchY = 300;
+            ctx.fillStyle = '#FFD54F'; // Gold
+            ctx.fillRect(torchX - 40, torchY, 80, 200); // Stand
+
+            // Flame
+            const flicker = Math.sin(Date.now() * 0.01) * 10;
+            ctx.fillStyle = '#FF5722'; // Orange
+            ctx.beginPath();
+            ctx.moveTo(torchX - 30, torchY);
+            ctx.lineTo(torchX + 30, torchY);
+            ctx.lineTo(torchX, torchY - 100 + flicker);
+            ctx.fill();
+
+            ctx.fillStyle = '#FFFF00'; // Yellow core
+            ctx.beginPath();
+            ctx.moveTo(torchX - 15, torchY);
+            ctx.lineTo(torchX + 15, torchY);
+            ctx.lineTo(torchX, torchY - 60 + flicker);
+            ctx.fill();
+
+            // Confetti / Flags
+            for (let i = 0; i < 10; i++) {
+                ctx.fillStyle = (i % 2 === 0) ? hostSec : '#FFFFFF';
+                const flagX = (CANVAS_WIDTH / 10) * i + 20;
+                ctx.fillRect(flagX, 80, 20, 40);
+            }
+        }
 
         // Top Banner
         ctx.fillStyle = hostColor;
         ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
-        drawText(`ROAD TO ${game.currentHost.name.toUpperCase()} ${game.year}`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
+
+        if (game.month <= 0) {
+            drawText(`WELCOME TO THE ${game.currentHost.name.toUpperCase()} SUMMER GAMES!`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
+            // Pulsing Subtext
+            const scale = 1 + Math.sin(Date.now() * 0.005) * 0.1;
+            ctx.save();
+            ctx.translate(CANVAS_WIDTH/2, 350);
+            ctx.scale(scale, scale);
+            drawText("GAMES OPEN! Go to ROSTER -> ATHLETE -> COMPETE", 0, 0, 14, '#FFFF00', 'center');
+            ctx.restore();
+        } else {
+            drawText(`ROAD TO ${game.currentHost.name.toUpperCase()} ${game.year}`, CANVAS_WIDTH/2, 40, 20, COLORS.white, 'center');
+             // Instruction Text
+            drawText("Go to ROSTER and select an athlete to TRAIN.", CANVAS_WIDTH/2, 350, 12, COLORS.text, 'center');
+        }
 
         // Calendar (Retro Panel)
         drawRetroPanel(300, 150, 200, 120, COLORS.panelGray);
@@ -542,13 +593,6 @@
         drawRetroPanel(hubUI.frontOfficeBtn.x, hubUI.frontOfficeBtn.y, hubUI.frontOfficeBtn.w, hubUI.frontOfficeBtn.h, COLORS.panelGray, "FRONT OFFICE");
         drawRetroPanel(hubUI.rosterBtn.x, hubUI.rosterBtn.y, hubUI.rosterBtn.w, hubUI.rosterBtn.h, COLORS.panelGray, "ROSTER");
         drawRetroPanel(hubUI.hofBtn.x, hubUI.hofBtn.y, hubUI.hofBtn.w, hubUI.hofBtn.h, COLORS.panelGray, "HALL OF FAME");
-
-        // Instruction Text
-        if (game.month <= 0) {
-             drawText("GAMES OPEN! Go to ROSTER -> ATHLETE -> COMPETE", CANVAS_WIDTH/2, 350, 14, '#00AA00', 'center');
-        } else {
-             drawText("Go to ROSTER and select an athlete to TRAIN.", CANVAS_WIDTH/2, 350, 12, COLORS.text, 'center');
-        }
     }
 
     // 3. FRONT OFFICE SCREEN
@@ -980,6 +1024,9 @@
         }
         else if (race.phase === RACE_PHASES.UNDERWATER) {
             race.speed *= 0.98;
+            // Friction Floor
+            if (race.stamina > 0 && race.speed < 0.5) race.speed = 0.5;
+
             if (pressedSpace) {
                 race.speed += 0.5 + (race.statSpeed / 200);
                 race.stamina -= 2;
@@ -998,6 +1045,9 @@
         }
         else if (race.phase === RACE_PHASES.SWIMMING) {
             race.speed *= 0.97;
+            // Friction Floor
+            if (race.stamina > 0 && race.speed < 0.5) race.speed = 0.5;
+
             if (pressedA || pressedD) {
                 const now = Date.now();
                 const diff = now - race.lastInputTime;
@@ -1080,48 +1130,13 @@
     }
 
     function drawRace() {
-        ctx.fillStyle = COLORS.waterBlue;
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
         const laneHeight = 60;
         const startY = 100;
         const poolStart = 50;
         const poolEnd = 750;
 
-        ctx.strokeStyle = COLORS.laneLine;
-        ctx.lineWidth = 2;
-        for (let i = 0; i <= 8; i++) {
-            const y = startY + (i * laneHeight);
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(CANVAS_WIDTH, y);
-            ctx.stroke();
-            if (i < 8) drawText(`${i+1}`, 20, y + 40, 20, '#FFFFFF55', 'center');
-        }
-
-        // 15m Lines
-        const line15mX = poolStart + (15 * 14);
-        ctx.strokeStyle = '#FF0000';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(line15mX, startY);
-        ctx.lineTo(line15mX, startY + (8 * laneHeight));
-        ctx.stroke();
-        drawText("15m", line15mX, startY - 10, 10, '#FF0000', 'center');
-
-        const line15mReturnX = poolEnd - (15 * 14);
-        ctx.beginPath();
-        ctx.moveTo(line15mReturnX, startY);
-        ctx.lineTo(line15mReturnX, startY + (8 * laneHeight));
-        ctx.stroke();
-        drawText("15m", line15mReturnX, startY - 10, 10, '#FF0000', 'center');
-
-        // Walls
-        ctx.fillStyle = '#999';
-        ctx.fillRect(0, startY - 20, 50, (8 * laneHeight) + 40);
-        ctx.fillRect(750, startY - 20, 50, (8 * laneHeight) + 40);
-
-        // Swimmer
+        // Camera Logic
+        let camX = 0;
         let swimmerX = 0;
         let facingRight = true;
 
@@ -1133,6 +1148,100 @@
             facingRight = false;
         }
 
+        // Center camera on swimmer, clamped to pool edges roughly
+        camX = CANVAS_WIDTH/2 - swimmerX;
+        // Clamp camera so we don't see infinite void (optional, but good)
+        // Actually, infinite scrolling lines are requested, so simple centering is fine.
+
+        ctx.save();
+        // Apply Camera
+        ctx.translate(camX, 0);
+
+        // 1. Water Background
+        ctx.fillStyle = '#0288D1'; // Darker Blue
+        // Draw a massive rectangle covering potential view
+        ctx.fillRect(-CANVAS_WIDTH, 0, CANVAS_WIDTH * 3, CANVAS_HEIGHT);
+
+        // 2. Scrolling Water Lines
+        ctx.fillStyle = '#81D4FA'; // Light Blue
+        const scrollOffset = (performance.now() * 0.02) % 100;
+        for (let i = 0; i < 6; i++) {
+            const y = startY + (i * 100) + 20;
+            // Draw long strips
+            for (let j = -10; j < 30; j++) {
+                 ctx.fillRect((j * 100) - scrollOffset, y, 60, 4);
+            }
+        }
+
+        // 3. Bleachers / Crowd (Above Pool)
+        const hostPrim = game.currentHost ? game.currentHost.primary : '#555';
+        const hostSec = game.currentHost ? game.currentHost.secondary : '#FFF';
+
+        ctx.fillStyle = '#333'; // Stand base
+        ctx.fillRect(-CANVAS_WIDTH, 0, CANVAS_WIDTH * 3, 100);
+
+        // Crowd dots
+        for (let i = 0; i < 200; i++) {
+            ctx.fillStyle = Math.random() > 0.5 ? hostPrim : hostSec;
+            const cx = (i * 15) - 500;
+            const cy = 20 + Math.random() * 60;
+            ctx.fillRect(cx, cy, 6, 6);
+        }
+
+        // 4. Lanes Ropes
+        ctx.lineWidth = 4;
+        for (let i = 0; i <= 8; i++) {
+            const y = startY + (i * laneHeight);
+
+            // Alternating Red/Yellow
+            ctx.setLineDash([10, 10]);
+
+            // Pass 1: Red
+            ctx.strokeStyle = '#D32F2F'; // Red
+            ctx.lineDashOffset = 0;
+            ctx.beginPath();
+            ctx.moveTo(-1000, y);
+            ctx.lineTo(2000, y);
+            ctx.stroke();
+
+            // Pass 2: Yellow
+            ctx.strokeStyle = '#FFEB3B'; // Yellow
+            ctx.lineDashOffset = 10; // Offset by gap
+            ctx.beginPath();
+            ctx.moveTo(-1000, y);
+            ctx.lineTo(2000, y);
+            ctx.stroke();
+
+            ctx.setLineDash([]); // Reset
+        }
+
+        // 5. Pool Structure (Walls/Blocks)
+        // Left Wall
+        ctx.fillStyle = '#999';
+        ctx.fillRect(poolStart - 50, startY - 20, 50, (8 * laneHeight) + 40);
+
+        // Starting Blocks (Chunky Gray)
+        for(let i=0; i<8; i++) {
+             ctx.fillStyle = '#555'; // Darker gray block
+             ctx.fillRect(poolStart - 40, startY + (i*laneHeight) + 10, 40, 40);
+        }
+
+        // Right Wall
+        ctx.fillStyle = '#999';
+        ctx.fillRect(poolEnd, startY - 20, 50, (8 * laneHeight) + 40);
+
+        // 15m Lines (on top of water)
+        const line15mX = poolStart + (15 * 14);
+        ctx.strokeStyle = '#D32F2F';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(line15mX, startY); ctx.lineTo(line15mX, startY + (8 * laneHeight)); ctx.stroke();
+        drawText("15m", line15mX, startY - 10, 10, '#FFF', 'center');
+
+        const line15mReturnX = poolEnd - (15 * 14);
+        ctx.beginPath(); ctx.moveTo(line15mReturnX, startY); ctx.lineTo(line15mReturnX, startY + (8 * laneHeight)); ctx.stroke();
+        drawText("15m", line15mReturnX, startY - 10, 10, '#FFF', 'center');
+
+        // 6. Swimmer
         const swimmerY = startY + (race.lane * laneHeight) - (laneHeight/2);
 
         ctx.save();
@@ -1143,14 +1252,15 @@
         const capColor = game.playerNation.primaryColor;
         const skinColor = '#FFCCAA';
 
+        // Body
         ctx.fillStyle = skinColor;
         ctx.fillRect(-15, -10, 30, 20);
-
+        // Cap
         ctx.fillStyle = capColor;
         ctx.beginPath();
         ctx.arc(15, 0, 12, 0, Math.PI * 2);
         ctx.fill();
-
+        // Arm
         ctx.strokeStyle = skinColor;
         ctx.lineWidth = 6;
         ctx.beginPath();
@@ -1160,25 +1270,66 @@
 
         ctx.restore();
 
-        if (race.feedback.time > 0) {
-            drawText(race.feedback.text, swimmerX, swimmerY - 40, 12, COLORS.white, 'center');
+        // 7. On-Screen Prompts (World Space, near swimmer)
+        let promptText = "";
+        if (race.phase === RACE_PHASES.BLOCKS) promptText = "WAIT...";
+        else if (race.phase === RACE_PHASES.DIVE) promptText = "PRESS [SPACE] TO DIVE!";
+        else if (race.phase === RACE_PHASES.UNDERWATER) promptText = "MASH [SPACE] TO KICK / [W] TO SURFACE";
+        else if (race.phase === RACE_PHASES.SWIMMING) promptText = "ALTERNATE [A] AND [D] TO SWIM!";
+        else if (race.phase === RACE_PHASES.TURN) promptText = "PRESS [SPACE] TO TURN!";
+        else if (race.phase === RACE_PHASES.FINISH) promptText = "FINISH!";
+
+        if (promptText) {
+            // Drop Shadow
+            drawText(promptText, swimmerX + 2, swimmerY - 58, 16, '#000000', 'center');
+            // Text
+            drawText(promptText, swimmerX, swimmerY - 60, 16, '#FFFFFF', 'center');
         }
 
-        // Overlay
-        drawRect(0, 0, CANVAS_WIDTH, 60, '#000000AA');
-        drawText(`TIME: ${(race.timer/1000).toFixed(2)}`, 50, 40, 20, COLORS.white);
-        drawText(`DIST: ${Math.min(100, race.distance).toFixed(1)}m`, 300, 40, 20, COLORS.white);
-        drawText(`SPD: ${race.speed.toFixed(1)} m/s`, 600, 40, 16, COLORS.white);
+        // Feedback Text (e.g. "PERFECT!")
+        if (race.feedback.time > 0) {
+            drawText(race.feedback.text, swimmerX, swimmerY - 40, 12, '#FFFF00', 'center');
+        }
 
-        // Stamina
-        const barW = 200;
+        ctx.restore(); // Restore Camera
+
+        // 8. HUD (Screen Space)
+        // Reset transform to draw HUD on top
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+        // Chunky Top Panel
+        drawRect(0, 0, CANVAS_WIDTH, 80, '#222');
+        ctx.strokeStyle = '#FFF';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, 0, CANVAS_WIDTH, 80);
+
+        // HUD Stats
+        const timeStr = (race.timer/1000).toFixed(2);
+        const distStr = Math.min(100, race.distance).toFixed(1);
+        const spdStr = race.speed.toFixed(1);
+
+        drawText("TIME", 150, 30, 16, '#999', 'center');
+        drawText(timeStr, 150, 60, 24, '#FFF', 'center');
+
+        drawText("DISTANCE", 400, 30, 16, '#999', 'center');
+        drawText(distStr + "m", 400, 60, 24, '#FFF', 'center');
+
+        drawText("SPEED", 650, 30, 16, '#999', 'center');
+        drawText(spdStr + " m/s", 650, 60, 24, '#FFF', 'center');
+
+        // Stamina Bar (Bottom)
+        const barW = 400;
         const barX = CANVAS_WIDTH/2 - barW/2;
-        const barY = 550;
-        drawRect(barX, barY, barW, 20, '#333', true);
-        const stamPct = race.stamina / race.maxStamina;
-        ctx.fillStyle = stamPct > 0.5 ? '#00FF00' : (stamPct > 0.2 ? '#FFFF00' : '#FF0000');
+        const barY = 540;
+
+        drawRetroPanel(barX - 10, barY - 10, barW + 20, 40, '#222');
+        const stamPct = Math.max(0, race.stamina / race.maxStamina);
+        ctx.fillStyle = stamPct > 0.5 ? '#00E676' : (stamPct > 0.2 ? '#FFEA00' : '#FF1744');
         ctx.fillRect(barX, barY, barW * stamPct, 20);
-        drawText("STAMINA", barX, barY - 10, 12, COLORS.white);
+        drawText("STAMINA", barX + barW/2, barY + 15, 12, '#000', 'center');
+
+        ctx.restore();
     }
 
     // RESULTS SCREEN
