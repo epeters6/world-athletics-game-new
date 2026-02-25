@@ -84,21 +84,46 @@
     };
 
     const WORLD_MAP = [
-        "00000000000000000000",
-        "00000000000000000000",
-        "00111000000111100000",
-        "00111100001111110000",
-        "00011000001111111000",
-        "00011100000111110000",
-        "00001100000011100000",
-        "00001000000000000000",
-        "00000000000000000000",
-        "00000000000000000000",
-        "00000000000000111000",
-        "00000000000000011000",
-        "00000000000000000000",
-        "00000000000000000000",
-        "00000000000000000000"
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000000000001111110000001110000000000001111100000000001111110000000000000000000",
+        "00000000001111111110000111110000000000111111111111111111111111110000000000000000",
+        "00000000111111111111001111110000000001111111111111111111111111111100000000000000",
+        "00000001111111111111001111100000000011111111111111111111111111111110000000000000",
+        "00000001111111111111000111000000000011111111111111111111111111111111000000000000",
+        "00000000111111111110000000000000000111111111111111111111111111111111100000000000",
+        "00000000011111111100000000000000000111111111111111111111111111111111100000000000",
+        "00000000001111111100000000000000000011111111111111111111111111111111100000000000",
+        "00000000001111111100000000000000000011111111111111111111111111111111000000000000",
+        "00000000000111111000000000000000000000111111111111111111111111111110000000000000",
+        "00000000000011111000000000000000000001111111111111111111111111111100000000000000",
+        "00000000000011110000000000000000000000111111111111111111111111111000000000000000",
+        "00000000000001110000000000000000000000011111111111111111111111110000000000000000",
+        "00000000000000111000000000000000000000011111111111111111111111100000000000000000",
+        "00000000000000011100000000000000000000001111111111111111111111000000000000000000",
+        "00000000000000011100000000000000000000001111111111111001111111000000000000000000",
+        "00000000000000001110000000000000000000000111111111110000011111000000000000000000",
+        "00000000000000001111000000000000000000000111111111100000000111000000000000000000",
+        "00000000000000000111100000000000000000000111111111000000000001000000000000000000",
+        "00000000000000000011100000000000000000000111111110000000000000000000000000000000",
+        "00000000000000000011110000000000000000000011111100000000000000000000011110000000",
+        "00000000000000000001110000000000000000000001111000000000000000000000111111000000",
+        "00000000000000000001111000000000000000000000111000000000000000000001111111100000",
+        "00000000000000000000111000000000000000000000110000000000000000000001111111100000",
+        "00000000000000000000011000000000000000000000010000000000000000000001111111100000",
+        "00000000000000000000011000000000000000000000000000000000000000000000111111000000",
+        "00000000000000000000001000000000000000000000000000000000000000000000011110000000",
+        "00000000000000000000001000000000000000000000000000000000000000000000000000000000",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "00000001111110000000001111111110000000000111111000000000000000001111110000000000",
+        "00001111111111110000111111111111110000011111111111000000000000111111111100000000",
+        "01111111111111111111111111111111111111111111111111111111111111111111111111111111"
     ];
 
     const CITY_DICTIONARY = {
@@ -365,8 +390,9 @@
     }
 
     function drawStart() {
-        // Full Screen Map 800x600 using 40px blocks
-        const blockSize = 40;
+        // Draw Full Screen Map (80x40 grid, 10px blocks)
+        const blockSize = 10;
+        const startY = 100; // Offset Y to center map on 800x600 (Map height 400px)
 
         // Ocean Background
         ctx.fillStyle = COLORS.oceanBlue;
@@ -377,9 +403,11 @@
             for (let c = 0; c < WORLD_MAP[r].length; c++) {
                 const char = WORLD_MAP[r][c];
                 const x = c * blockSize;
-                const y = r * blockSize;
+                const y = startY + r * blockSize;
+
                 if (char === '1') {
-                    ctx.fillStyle = COLORS.landGreen;
+                    if (r >= 37) ctx.fillStyle = COLORS.white; // Antarctica
+                    else ctx.fillStyle = COLORS.landGreen;
                     ctx.fillRect(x, y, blockSize, blockSize);
                 }
             }
@@ -395,6 +423,12 @@
             const isHover = Math.sqrt((mouse.x - pin.x)**2 + (mouse.y - pin.y)**2) < pin.r + 15;
 
             // Pin Body
+            // Shadow
+            ctx.fillStyle = COLORS.black;
+            ctx.beginPath();
+            ctx.arc(pin.x + 4, pin.y + 4, pin.r, 0, Math.PI * 2);
+            ctx.fill();
+
             ctx.fillStyle = isHover ? COLORS.headerYellow : pin.color;
             ctx.beginPath();
             ctx.arc(pin.x, pin.y, pin.r, 0, Math.PI * 2);
@@ -456,10 +490,12 @@
         }
         // Facilities (Placeholder for now, just plays sound)
         if (isInside(mouse, hubUI.facilitiesBtn)) {
+            // Future Facility Screen
             audio.playSfx('blip');
         }
         // HoF (Placeholder)
         if (isInside(mouse, hubUI.hofBtn)) {
+            // Future HoF Screen
             audio.playSfx('blip');
         }
 
@@ -496,11 +532,14 @@
         drawBtn(hubUI.rosterBtn, "ROSTER");
         drawBtn(hubUI.facilitiesBtn, "FACILITIES");
         drawBtn(hubUI.hofBtn, "HALL OF FAME");
+
+        // Instruction Text
+        drawText("Go to ROSTER and select an athlete to TRAIN or COMPETE.", CANVAS_WIDTH/2, 550, 12, COLORS.white, 'center');
     }
 
     // 3. ROSTER SCREEN
     const rosterUI = {
-        backBtn: { x: 50, y: 530, w: 150, h: 50 },
+        backBtn: { x: 20, y: 20, w: 120, h: 40 }, // Universal Top-Left Back Button
         listStartY: 160,
         itemH: 60,
         tabs: {
@@ -591,14 +630,14 @@
 
         // Back
         drawRect(rosterUI.backBtn.x, rosterUI.backBtn.y, rosterUI.backBtn.w, rosterUI.backBtn.h, COLORS.headerYellow, true, true);
-        drawText("BACK", rosterUI.backBtn.x + 75, rosterUI.backBtn.y + 35, 16, COLORS.text, 'center');
+        drawText("◀ BACK", rosterUI.backBtn.x + 60, rosterUI.backBtn.y + 28, 14, COLORS.text, 'center');
     }
 
     // 4. ATHLETE DETAIL SCREEN
     const detailUI = {
-        backBtn: { x: 50, y: 530, w: 150, h: 50 },
-        trainBtn: { x: 250, y: 380, w: 300, h: 80 },
-        tagBtn: { x: 550, y: 530, w: 200, h: 50 }
+        backBtn: { x: 20, y: 20, w: 120, h: 40 }, // Universal Top-Left Back Button
+        trainBtn: { x: 50, y: 400, w: 700, h: 150 }, // Massive bottom third button
+        tagBtn: { x: 550, y: 20, w: 200, h: 40 } // Moved to top right
     };
 
     function updateDetail() {
@@ -682,7 +721,7 @@
         // Train Button
         const canTrain = game.month >= 3;
         const isGames = game.month <= 0;
-        let btnColor = canTrain ? COLORS.headerYellow : '#999';
+        let btnColor = canTrain ? '#00AA00' : '#999'; // Bright green as requested
         let btnText = "TRAIN (3mo)";
 
         if (isGames) {
@@ -699,18 +738,19 @@
         }
 
         drawRect(detailUI.trainBtn.x, detailUI.trainBtn.y, detailUI.trainBtn.w, detailUI.trainBtn.h, btnColor, true, true);
-        drawText(btnText, detailUI.trainBtn.x + 150, detailUI.trainBtn.y + 45, 16, isGames ? COLORS.white : COLORS.text, 'center');
+        drawText(btnText, detailUI.trainBtn.x + 350, detailUI.trainBtn.y + 80, 24, COLORS.white, 'center');
 
 
         // Buttons
+        // Back
         drawRect(detailUI.backBtn.x, detailUI.backBtn.y, detailUI.backBtn.w, detailUI.backBtn.h, COLORS.headerYellow, true, true);
-        drawText("BACK", detailUI.backBtn.x + 75, detailUI.backBtn.y + 35, 16, COLORS.text, 'center');
+        drawText("◀ BACK", detailUI.backBtn.x + 60, detailUI.backBtn.y + 28, 14, COLORS.text, 'center');
 
         // HoF Tag
         const tagColor = a.hofTag ? '#00AA00' : '#777';
         const tagText = a.hofTag ? "TAGGED FOR HOF" : "TAG FOR HOF";
         drawRect(detailUI.tagBtn.x, detailUI.tagBtn.y, detailUI.tagBtn.w, detailUI.tagBtn.h, tagColor, true, true);
-        drawText(tagText, detailUI.tagBtn.x + 100, detailUI.tagBtn.y + 35, 14, COLORS.white, 'center');
+        drawText(tagText, detailUI.tagBtn.x + 100, detailUI.tagBtn.y + 28, 12, COLORS.white, 'center');
     }
 
     // 5. RACE LOGIC (100m Freestyle)
